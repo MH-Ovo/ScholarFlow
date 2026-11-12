@@ -8,7 +8,7 @@
 ![LangGraph](https://img.shields.io/badge/LangGraph-StateGraph-orange.svg)
 ![Qdrant](https://img.shields.io/badge/Qdrant-vector--db-ff3f59.svg)
 
-> 仓库：<https://github.com/finn-liam/knowledge-research-agent>
+> 仓库：<https://github.com/MH-Ovo/ScholarFlow>
 >
 > 主分支：`main`
 
@@ -120,8 +120,8 @@ Router / Planner（chat | knowledge；逐源规划 kb/paper/web/cnki）
 ### 2. 克隆与安装
 
 ```bash
-git clone https://github.com/finn-liam/knowledge-research-agent.git
-cd knowledge-research-agent
+git clone https://github.com/MH-Ovo/ScholarFlow.git
+cd ScholarFlow
 ```
 
 后端：

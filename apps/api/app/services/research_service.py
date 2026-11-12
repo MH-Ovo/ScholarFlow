@@ -8,6 +8,7 @@ from sqlalchemy import delete, select
 from app.agents import mock_data, nodes
 from app.agents.events import EVENT_BUS
 from app.agents.graph import get_research_graph
+from app.core import trace
 from app.db.session import SessionLocal
 from app.models.research import STEP_DEFS, Message, ResearchStep, ResearchTask, Source
 
@@ -50,6 +51,8 @@ async def create_task(query: str, lang: str = "zh") -> str:
 async def _run(task_id: str, query: str, lang: str = "zh") -> None:
     EVENT_BUS.open(task_id)
     t0 = time.time()
+    token = trace.set_task(task_id)
+    status = "done"
     try:
         graph = get_research_graph()
         await graph.ainvoke(
@@ -63,8 +66,11 @@ async def _run(task_id: str, query: str, lang: str = "zh") -> None:
             }
         )
     except Exception as exc:  # 任何节点异常都不中断 SSE，转为 error 事件
+        status = "error"
         await nodes.on_error(task_id, f"{type(exc).__name__}: {exc}")
     finally:
+        trace.record_task(task_id, status, query, (time.time() - t0) * 1000)
+        trace.reset_task(token)
         EVENT_BUS.emit(task_id, "stream_end", {})
 
 

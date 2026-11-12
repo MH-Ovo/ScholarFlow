@@ -4,6 +4,7 @@ import type {
   KbDetail,
   KbDocument,
   KbStats,
+  SourceFulltext,
   SourceStatItem,
   TaskDetail,
   TaskSummary,
@@ -54,6 +55,12 @@ export const api = {
     request<{ ok: boolean }>(`/research/${taskId}/followup`, {
       method: "POST",
       body: JSON.stringify({ query, lang }),
+    }),
+
+  /** 知网来源：下载全文并登记入库（同步下载，解析/向量化在后台） */
+  fetchSourceFulltext: (taskId: string, refNo: number) =>
+    request<SourceFulltext>(`/research/${taskId}/sources/${refNo}/fulltext`, {
+      method: "POST",
     }),
 
   sourceStats: () => request<{ items: SourceStatItem[] }>("/sources/stats"),

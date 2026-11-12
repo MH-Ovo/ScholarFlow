@@ -2,7 +2,7 @@
 
 export type StepStatus = "pending" | "running" | "done" | "failed" | "paused" | "skipped";
 export type TaskStatus = "running" | "done" | "failed";
-export type SourceType = "enterprise" | "paper" | "web" | "news" | "patent" | "report";
+export type SourceType = "enterprise" | "paper" | "web" | "news" | "patent" | "report" | "cnki";
 
 export interface StepInfo {
   step_key: string;
@@ -10,6 +10,21 @@ export interface StepInfo {
   order_index: number;
   status: StepStatus;
   meta: Record<string, unknown>;
+}
+
+export interface SourceMeta {
+  authors?: string;
+  journal?: string;
+  year?: number | null;
+  doi?: string;
+  record_ref?: string;
+  evidence_level?: string; // abstract / fulltext / title_only
+  fulltext_available?: string; // yes / no / unknown
+  document_id?: number;
+  document_status?: string; // pending / parsing / embedding / indexed / failed
+  chunk_count?: number;
+  document_error?: string;
+  [key: string]: unknown;
 }
 
 export interface SourceItem {
@@ -21,6 +36,17 @@ export interface SourceItem {
   relevance: number;
   source_label: string;
   page_nos?: number[];
+  meta?: SourceMeta;
+}
+
+/** 知网来源全文获取/入库状态（POST /research/{id}/sources/{ref}/fulltext） */
+export interface SourceFulltext {
+  state: "pending" | "in_progress" | "indexed" | "failed";
+  document_id: number | null;
+  document_name: string;
+  size_bytes: number;
+  chunk_count: number;
+  reason: string | null;
 }
 
 export interface GraphNode {

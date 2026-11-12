@@ -2,3 +2,4 @@
 # pip install -r requirements-eval.txt
 ragas>=0.4
 matplotlib>=3.8
+langfuse>=2.0

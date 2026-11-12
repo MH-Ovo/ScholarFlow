@@ -1,0 +1,263 @@
+[
+  {
+    "id": "e2e-sf01",
+    "source_id": "sf01",
+    "question": "RAG 模型中的参数化记忆和非参数化记忆分别是什么？",
+    "reference": "参数化记忆是一个预训练的 seq2seq 模型，非参数化记忆是 Wikipedia 的稠密向量索引，通过预训练的神经检索器访问。",
+    "type": "method",
+    "lang": "zh",
+    "source": "scholarflow_en",
+    "doc_name": "rag_original.pdf",
+    "relevant_chunks": [
+      "3#1"
+    ]
+  },
+  {
+    "id": "e2e-sf02",
+    "source_id": "sf02",
+    "question": "RAG 中如何对潜在文档进行边缘化（marginalize）？",
+    "reference": "使用 top-K 近似进行边缘化，可以按每个输出（假设同一文档负责所有 token）或按每个 token（不同文档负责不同 token）进行。",
+    "type": "method",
+    "lang": "zh",
+    "source": "scholarflow_en",
+    "doc_name": "rag_original.pdf",
+    "relevant_chunks": [
+      "3#3",
+      "3#4"
+    ]
+  },
+  {
+    "id": "e2e-sf06",
+    "source_id": "sf06",
+    "question": "在训练 RAG 时，为什么保持文档编码器 BERTd（及索引）固定，只微调查询编码器 BERTq 和 BART 生成器？",
+    "reference": "因为训练中更新文档编码器 BERTd 代价高昂，需要像 REALM 预训练时那样定期更新文档索引；作者发现这一步对强性能并非必要，因此保持文档编码器（及索引）固定，只微调查询编码器 BERTq 和 BART 生成器。",
+    "type": "analysis",
+    "lang": "zh",
+    "source": "scholarflow_en",
+    "doc_name": "rag_original.pdf",
+    "relevant_chunks": [
+      "3#6"
+    ]
+  },
+  {
+    "id": "e2e-sf13",
+    "source_id": "sf13",
+    "question": "这篇综述将RAG范式的发展划分为哪三种类型？",
+    "reference": "Naive RAG、Advanced RAG 和 Modular RAG。",
+    "type": "fact",
+    "lang": "zh",
+    "source": "scholarflow_en",
+    "doc_name": "rag_survey.pdf",
+    "relevant_chunks": [
+      "4#1",
+      "4#5"
+    ]
+  },
+  {
+    "id": "e2e-sf15",
+    "source_id": "sf15",
+    "question": "这篇综述从100多项RAG研究中总结出了几个主要研究范式？",
+    "reference": "三个主要研究范式。",
+    "type": "fact",
+    "lang": "zh",
+    "source": "scholarflow_en",
+    "doc_name": "rag_survey.pdf",
+    "relevant_chunks": [
+      "4#3",
+      "5#11"
+    ]
+  },
+  {
+    "id": "e2e-sf17",
+    "source_id": "sf17",
+    "question": "在Naive RAG的检索阶段，系统如何选出用于扩展上下文的chunks？",
+    "reference": "系统用与索引阶段相同的编码模型把查询转换为向量表示，计算查询向量与索引语料中chunks向量的相似度分数，优先检索与查询相似度最高的Top K个chunks，并将这些chunks作为prompt中的扩展上下文。",
+    "type": "method",
+    "lang": "zh",
+    "source": "scholarflow_en",
+    "doc_name": "rag_survey.pdf",
+    "relevant_chunks": [
+      "4#7"
+    ]
+  },
+  {
+    "id": "e2e-sf19",
+    "source_id": "sf19",
+    "question": "Modular RAG 相比前两种 RAG 范式（Naive 和 Advanced）在架构上有什么主要优势？",
+    "reference": "Modular RAG 超越了前两种 RAG 范式，提供更强的适应性和通用性，支持顺序处理以及跨组件的端到端集成训练，并引入了额外的专用模块（如 Search 模块、Memory 模块等）。",
+    "type": "analysis",
+    "lang": "zh",
+    "source": "scholarflow_en",
+    "doc_name": "rag_survey.pdf",
+    "relevant_chunks": [
+      "4#10"
+    ]
+  },
+  {
+    "id": "e2e-sf21",
+    "source_id": "sf21",
+    "question": "根据片段，RAG 与 Fine-tuning（FT）在知识更新方面各有什么特点？",
+    "reference": "RAG 在动态环境中表现出色，能提供实时知识更新并有效利用外部知识源，且具有高可解释性；而 FT 更静态，更新需要重新训练，但能对模型行为和风格进行深度定制。",
+    "type": "analysis",
+    "lang": "zh",
+    "source": "scholarflow_en",
+    "doc_name": "rag_survey.pdf",
+    "relevant_chunks": [
+      "4#12"
+    ]
+  },
+  {
+    "id": "e2e-sf28",
+    "source_id": "sf28",
+    "question": "HyDE 方法构造了什么，并且它关注的是哪种嵌入相似性？",
+    "reference": "HyDE 构造假设性文档（假定为原始查询的答案），它关注的是从答案到答案的嵌入相似性，而不是为问题或查询寻找嵌入相似性。",
+    "type": "method",
+    "lang": "zh",
+    "source": "scholarflow_en",
+    "doc_name": "rag_survey.pdf",
+    "relevant_chunks": [
+      "4#21"
+    ]
+  },
+  {
+    "id": "e2e-sf29",
+    "source_id": "sf29",
+    "question": "在什么情况下有必要在自己的领域数据集上微调嵌入模型？",
+    "reference": "当上下文与预训练语料显著偏离时，尤其是在医疗、法律等充满专有术语的高度专业化领域，有必要在自己的领域数据集上微调嵌入模型以缓解这种差异。",
+    "type": "method",
+    "lang": "zh",
+    "source": "scholarflow_en",
+    "doc_name": "rag_survey.pdf",
+    "relevant_chunks": [
+      "4#22"
+    ]
+  },
+  {
+    "id": "e2e-cn04",
+    "source_id": "cn04",
+    "question": "RAG技术早期阶段（开放域问答驱动、神经检索突破阶段）与后期阶段（检索增强大模型、AI搜索阶段）在要解决的问题上有何不同？",
+    "reference": "早期阶段旨在解决模型内部知识难以精确检索和更新的难题，同时满足对可解释性与时效性的需求，并以外部知识库弥补预训练语言模型知识容量有限的不足；后期阶段则针对超大模型知识更新困难与长尾事实遗忘问题，探索通过检索增强较小模型以匹敌超大模型性能，并满足复杂任务中整合多源信息的需求，解决幻觉与知识过时，推动主动检索、多模态增强与工业级应用落地。",
+    "type": "comparison",
+    "lang": "zh",
+    "source": "scholarflow_cn",
+    "doc_name": "cjc_rag_survey.pdf",
+    "relevant_chunks": [
+      "5#7",
+      "5#8"
+    ]
+  },
+  {
+    "id": "e2e-cn06",
+    "source_id": "cn06",
+    "question": "Gao等人提出的RAG分类框架与Ding等人的分类方式在分类依据上有何不同？",
+    "reference": "Gao等人提出面向LLM的系统性分类框架，将RAG划分为“朴素RAG”、“高级RAG”和“模块化RAG”三大范式；Ding等人则聚焦检索增强大语言模型，按照体系结构、训练策略和应用场景分类。",
+    "type": "comparison",
+    "lang": "zh",
+    "source": "scholarflow_cn",
+    "doc_name": "cjc_rag_survey.pdf",
+    "relevant_chunks": [
+      "5#10",
+      "5#11"
+    ]
+  },
+  {
+    "id": "e2e-cn12",
+    "source_id": "cn12",
+    "question": "在知识利用方式上，RAG与传统闭卷模型（Closed-book Models）和检索式问答系统（Retrieval-based QA Systems）有何不同？",
+    "reference": "RAG采用“外部知识调用+条件生成”策略，在生成答案前显式地从外部文档库中检索语义相关内容并作为生成条件，从而在保持语言自然度的同时实现知识利用的动态性与模块化；而传统闭卷模型和检索式问答系统不具备这种检索–生成联动的动态模块化知识利用方式。",
+    "type": "comparison",
+    "lang": "zh",
+    "source": "scholarflow_cn",
+    "doc_name": "mc_rag_survey.pdf",
+    "relevant_chunks": [
+      "6#4",
+      "6#5"
+    ]
+  },
+  {
+    "id": "e2e-cn14",
+    "source_id": "cn14",
+    "question": "RAG的训练与推理支持哪两种主流模式，二者在检索器与生成器的优化关系上有何不同？",
+    "reference": "一种是管线式结构，先训练检索器再调用生成器；另一种为端到端联合优化，将检索与生成解耦建模转化为可微优化过程，使检索器可在生成器的损失引导下迭代更新。",
+    "type": "comparison",
+    "lang": "zh",
+    "source": "scholarflow_cn",
+    "doc_name": "mc_rag_survey.pdf",
+    "relevant_chunks": [
+      "6#7",
+      "6#8"
+    ]
+  },
+  {
+    "id": "e2e-cn16",
+    "source_id": "cn16",
+    "question": "在RAG流程实现差异的对比中，WebGPT与REPLUG分别在哪个环节采取了什么不同做法？",
+    "reference": "WebGPT在检索阶段加入BM25作为初筛机制以提高召回效率；REPLUG则在生成器不可训练的场景下进一步优化检索器，以更好适配输出语言模型的响应偏好。",
+    "type": "comparison",
+    "lang": "zh",
+    "source": "scholarflow_cn",
+    "doc_name": "mc_rag_survey.pdf",
+    "relevant_chunks": [
+      "6#10",
+      "6#11"
+    ]
+  },
+  {
+    "id": "e2e-cn18",
+    "source_id": "cn18",
+    "question": "传统RAG与GraphRAG在知识表示和检索方式上的主要差异是什么？",
+    "reference": "传统RAG通常将文档切分为固定长度文本块，采用BM25或向量相似度检索召回相关片段，再将检索结果输入LLM生成答案；其实现简单、效率较高，但知识表示阶段文本块之间缺少显式结构关系，如财政文档中的文件层级、附件依附和表格字段结构，导致不能基于文档间和文档内的逻辑结构检索。GraphRAG则将实体、关系、文本片段或文档单元组织为图结构，以增强RAG知识表示的结构化表示能力和检索的结构化推理能力。",
+    "type": "comparison",
+    "lang": "zh",
+    "source": "scholarflow_cn",
+    "doc_name": "hanspub_mdhsg_rag.pdf",
+    "relevant_chunks": [
+      "7#3",
+      "7#4"
+    ]
+  },
+  {
+    "id": "e2e-cn22",
+    "source_id": "cn22",
+    "question": "MDHSG-RAG 的三个阶段中，图索引构建阶段和检索阶段各自承担什么任务？",
+    "reference": "图构建阶段对多结构文档进行结构识别、模板匹配和统一图构建，将异构文档映射为统一层级图结构G；检索阶段依据问题类型选择检索模板，在文档级、条款级、内容块级和表格字段级逐层收缩候选空间，并沿图关系进行受控扩展，形成最终证据集合。",
+    "type": "comparison",
+    "lang": "zh",
+    "source": "scholarflow_cn",
+    "doc_name": "hanspub_mdhsg_rag.pdf",
+    "relevant_chunks": [
+      "7#8",
+      "7#9"
+    ]
+  },
+  {
+    "id": "e2e-cn26",
+    "source_id": "cn26",
+    "question": "GraphRAG相比传统RAG在检索方式和可解释性上有哪些改进，同时又存在什么成本问题？",
+    "reference": "GraphRAG将文本数据转化为图结构，显式建模实体间的复杂关联，避免传统RAG对关键词匹配的过度依赖，并通过图遍历实现多跳检索，解决传统RAG难以适用于复杂逻辑的问题；还可根据子图关系链生成结果并标注来源路径，实现追溯依据，增强回答可解释性。但其在构建知识图谱和用户问答过程中多次调用LLM，造成大量算力消耗，系统响应时间大大拉长，综合考虑时间成本和算力成本，对效果提升难以形成正反馈。",
+    "type": "comparison",
+    "lang": "zh",
+    "source": "scholarflow_cn",
+    "doc_name": "hanspub_opticache_rag.pdf",
+    "relevant_chunks": [
+      "8#7",
+      "8#8"
+    ]
+  },
+  {
+    "id": "e2e-cnki-01",
+    "question": "国内关于混合检索在 RAG 中的应用有哪些代表性研究？它们的做法有何不同？",
+    "reference": "国内代表性工作包括：IHRAG（迭代式混合检索增强生成，动态路由协同向量检索与知识图谱推理，结合医疗本体查询解构与“检索-验证-迭代”闭环）；HCHRS（面向企业知识库的层次化分块与双通道混合检索，结构感知分块 + 父子块双层索引 + 交叉重排）；HyRO（融合向量编码与知识图谱的混合检索框架，两阶段实体消歧、社区摘要与交叉编码器重排）。三者的差异主要在检索信号（向量/图谱/词法）、分块方式和重排策略。",
+    "type": "comparison",
+    "lang": "zh",
+    "source": "custom_cnki"
+  },
+  {
+    "id": "e2e-cnki-02",
+    "question": "知网上企业知识库场景的 RAG 方案通常如何解决分块与检索问题？",
+    "reference": "典型方案采用结构感知的自适应分块（结合 DOM 与 Confluence 语义边界、三级表格处理），构建层次化父子块索引（文档摘要与细粒度内容双层索引），并在检索阶段使用双通道混合检索与交叉重排，融合摘要层与内容层优势；代表工作是 HCHRS。",
+    "type": "comparison",
+    "lang": "zh",
+    "source": "custom_cnki"
+  }
+]

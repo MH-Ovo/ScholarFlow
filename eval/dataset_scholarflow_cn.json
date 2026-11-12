@@ -1,0 +1,351 @@
+[
+  {
+    "id": "cn01",
+    "question": "大语言模型面临哪些挑战，从而限制了其在实际应用中的可靠性？",
+    "ground_truth": "大语言模型面临幻觉（Hallucination）、知识过时以及推理过程不透明且难以追溯等挑战，限制了其在实际应用中的可靠性。",
+    "relevant_chunks": [
+      "5#1"
+    ],
+    "doc_name": "cjc_rag_survey.pdf",
+    "type": "fact"
+  },
+  {
+    "id": "cn02",
+    "question": "当查询涉及超出训练数据范围的内容或需依赖最新信息时，模型会出现什么问题？",
+    "ground_truth": "模型易生成错误信息或出现“幻觉”，从而影响其可靠性和实用性。",
+    "relevant_chunks": [
+      "5#6"
+    ],
+    "doc_name": "cjc_rag_survey.pdf",
+    "type": "fact"
+  },
+  {
+    "id": "cn03",
+    "question": "Lewis 等人于2020年正式提出的RAG框架结合了哪两个组件？",
+    "ground_truth": "结合了BART与神经检索器。",
+    "relevant_chunks": [
+      "5#7"
+    ],
+    "doc_name": "cjc_rag_survey.pdf",
+    "type": "fact"
+  },
+  {
+    "id": "cn04",
+    "question": "RAG技术早期阶段（开放域问答驱动、神经检索突破阶段）与后期阶段（检索增强大模型、AI搜索阶段）在要解决的问题上有何不同？",
+    "ground_truth": "早期阶段旨在解决模型内部知识难以精确检索和更新的难题，同时满足对可解释性与时效性的需求，并以外部知识库弥补预训练语言模型知识容量有限的不足；后期阶段则针对超大模型知识更新困难与长尾事实遗忘问题，探索通过检索增强较小模型以匹敌超大模型性能，并满足复杂任务中整合多源信息的需求，解决幻觉与知识过时，推动主动检索、多模态增强与工业级应用落地。",
+    "relevant_chunks": [
+      "5#7",
+      "5#8"
+    ],
+    "doc_name": "cjc_rag_survey.pdf",
+    "type": "comparison"
+  },
+  {
+    "id": "cn05",
+    "question": "工业界有哪些 RAG 产品化落地案例？",
+    "ground_truth": "微软新必应与谷歌 AI Overviews 通过实时网页检索和语义理解提升搜索的时效性与可靠性；纳米 AI 搜索整合 DeepSeek 等先进模型，实现跨模态搜索与高效信息处理；Perplexity 的 AI 浏览器 Comet 通过“代理搜索”实现自主任务执行；xAI 的 DeepSearch 基于 Grok 3，利用 X 平台数据提供精准摘要与深度推理；OpenAI、Google 及 Perplexity 还推出了 DeepResearch 工具。",
+    "relevant_chunks": [
+      "5#10"
+    ],
+    "doc_name": "cjc_rag_survey.pdf",
+    "type": "fact"
+  },
+  {
+    "id": "cn06",
+    "question": "Gao等人提出的RAG分类框架与Ding等人的分类方式在分类依据上有何不同？",
+    "ground_truth": "Gao等人提出面向LLM的系统性分类框架，将RAG划分为“朴素RAG”、“高级RAG”和“模块化RAG”三大范式；Ding等人则聚焦检索增强大语言模型，按照体系结构、训练策略和应用场景分类。",
+    "relevant_chunks": [
+      "5#10",
+      "5#11"
+    ],
+    "doc_name": "cjc_rag_survey.pdf",
+    "type": "comparison"
+  },
+  {
+    "id": "cn07",
+    "question": "该综述以什么为主线来串联各种潜在增强技术？",
+    "ground_truth": "以RAG工作流程为主线。",
+    "relevant_chunks": [
+      "5#12"
+    ],
+    "doc_name": "cjc_rag_survey.pdf",
+    "type": "fact"
+  },
+  {
+    "id": "cn08",
+    "question": "在RAG框架的索引创建过程中，数据准备阶段将原始数据转换后划分成的更小单元被称为什么？",
+    "ground_truth": "块。",
+    "relevant_chunks": [
+      "5#13"
+    ],
+    "doc_name": "cjc_rag_survey.pdf",
+    "type": "fact"
+  },
+  {
+    "id": "cn09",
+    "question": "当前RAG研究面临哪些挑战？",
+    "ground_truth": "评估体系不统一、训练开销高、可控性不足。",
+    "relevant_chunks": [
+      "6#1"
+    ],
+    "doc_name": "mc_rag_survey.pdf",
+    "type": "fact"
+  },
+  {
+    "id": "cn10",
+    "question": "当前 RAG 研究面临哪些挑战，而大语言模型在知识获取上又存在什么固有缺陷？",
+    "ground_truth": "RAG 研究面临的挑战包括评估体系不统一、训练开销高、可控性不足；而大语言模型因知识获取依赖预训练阶段的静态语料，在处理需要事实核查、时效性强或领域特定的任务时，易出现知识缺失与信息幻觉。",
+    "relevant_chunks": [
+      "6#1",
+      "6#3"
+    ],
+    "doc_name": "mc_rag_survey.pdf",
+    "type": "fact"
+  },
+  {
+    "id": "cn11",
+    "question": "本文指出目前RAG研究尚缺乏什么，从而难以为后续研究提供清晰框架与统一视角？",
+    "ground_truth": "目前尚缺乏系统性综述以梳理RAG的理论基础、模型演化路径与研究趋势。",
+    "relevant_chunks": [
+      "6#4"
+    ],
+    "doc_name": "mc_rag_survey.pdf",
+    "type": "fact"
+  },
+  {
+    "id": "cn12",
+    "question": "在知识利用方式上，RAG与传统闭卷模型（Closed-book Models）和检索式问答系统（Retrieval-based QA Systems）有何不同？",
+    "ground_truth": "RAG采用“外部知识调用+条件生成”策略，在生成答案前显式地从外部文档库中检索语义相关内容并作为生成条件，从而在保持语言自然度的同时实现知识利用的动态性与模块化；而传统闭卷模型和检索式问答系统不具备这种检索–生成联动的动态模块化知识利用方式。",
+    "relevant_chunks": [
+      "6#4",
+      "6#5"
+    ],
+    "doc_name": "mc_rag_survey.pdf",
+    "type": "comparison"
+  },
+  {
+    "id": "cn13",
+    "question": "RAG框架在知识存储与调用方面具有什么特性，从而提升了系统的可扩展性与可更新性？",
+    "ground_truth": "模型对知识的存储与调用解耦，提高了整体系统的可扩展性与可更新性，支持快速集成不同领域知识库或增量更新文档集合。",
+    "relevant_chunks": [
+      "6#7"
+    ],
+    "doc_name": "mc_rag_survey.pdf",
+    "type": "fact"
+  },
+  {
+    "id": "cn14",
+    "question": "RAG的训练与推理支持哪两种主流模式，二者在检索器与生成器的优化关系上有何不同？",
+    "ground_truth": "一种是管线式结构，先训练检索器再调用生成器；另一种为端到端联合优化，将检索与生成解耦建模转化为可微优化过程，使检索器可在生成器的损失引导下迭代更新。",
+    "relevant_chunks": [
+      "6#7",
+      "6#8"
+    ],
+    "doc_name": "mc_rag_survey.pdf",
+    "type": "comparison"
+  },
+  {
+    "id": "cn15",
+    "question": "在RAG流程的融合阶段，Fusion-in-Decoder（FiD）采用了怎样的编码与聚合设计？",
+    "ground_truth": "FiD对每个文档独立编码，仅在Decoder阶段进行聚合，该设计证明在多文档融合场景下能显著提升生成质量。",
+    "relevant_chunks": [
+      "6#10"
+    ],
+    "doc_name": "mc_rag_survey.pdf",
+    "type": "method"
+  },
+  {
+    "id": "cn16",
+    "question": "在RAG流程实现差异的对比中，WebGPT与REPLUG分别在哪个环节采取了什么不同做法？",
+    "ground_truth": "WebGPT在检索阶段加入BM25作为初筛机制以提高召回效率；REPLUG则在生成器不可训练的场景下进一步优化检索器，以更好适配输出语言模型的响应偏好。",
+    "relevant_chunks": [
+      "6#10",
+      "6#11"
+    ],
+    "doc_name": "mc_rag_survey.pdf",
+    "type": "comparison"
+  },
+  {
+    "id": "cn17",
+    "question": "MDHSG-RAG方法在检索和生成阶段的表现如何？它改善了财政监管问答中的哪些方面？",
+    "ground_truth": "实验结果表明，MDHSG-RAG在检索阶段和生成阶段均优于对比方法。该方法提升了财政监管问答中的证据定位、答案准确性和可追溯性。",
+    "relevant_chunks": [
+      "7#3"
+    ],
+    "doc_name": "hanspub_mdhsg_rag.pdf",
+    "type": "fact"
+  },
+  {
+    "id": "cn18",
+    "question": "传统RAG与GraphRAG在知识表示和检索方式上的主要差异是什么？",
+    "ground_truth": "传统RAG通常将文档切分为固定长度文本块，采用BM25或向量相似度检索召回相关片段，再将检索结果输入LLM生成答案；其实现简单、效率较高，但知识表示阶段文本块之间缺少显式结构关系，如财政文档中的文件层级、附件依附和表格字段结构，导致不能基于文档间和文档内的逻辑结构检索。GraphRAG则将实体、关系、文本片段或文档单元组织为图结构，以增强RAG知识表示的结构化表示能力和检索的结构化推理能力。",
+    "relevant_chunks": [
+      "7#3",
+      "7#4"
+    ],
+    "doc_name": "hanspub_mdhsg_rag.pdf",
+    "type": "comparison"
+  },
+  {
+    "id": "cn19",
+    "question": "现有多文档检索方法在检索策略上存在什么不足？",
+    "ground_truth": "不能利用逐步求精的检索过程形成问题到答案的证据链。",
+    "relevant_chunks": [
+      "7#6"
+    ],
+    "doc_name": "hanspub_mdhsg_rag.pdf",
+    "type": "fact"
+  },
+  {
+    "id": "cn20",
+    "question": "MDHSG-RAG 方法在检索阶段如何逐层缩小候选空间？",
+    "ground_truth": "依据问题类型选择相应结构化检索模板，然后自顶向下层级检索文档级、条款级、内容块级和表格字段级逐层缩小候选空间，并根据查询意图结合引用关系、附件依附关系和表格关联关系进行检索扩展。",
+    "relevant_chunks": [
+      "7#7"
+    ],
+    "doc_name": "hanspub_mdhsg_rag.pdf",
+    "type": "method"
+  },
+  {
+    "id": "cn21",
+    "question": "MDHSG-RAG 的整体框架包含哪几个主要部分？",
+    "ground_truth": "整体框架包含三部分：1. 多文档异构图索引；2. 多粒度文档片段检索；3. 答案生成。",
+    "relevant_chunks": [
+      "7#8"
+    ],
+    "doc_name": "hanspub_mdhsg_rag.pdf",
+    "type": "fact"
+  },
+  {
+    "id": "cn22",
+    "question": "MDHSG-RAG 的三个阶段中，图索引构建阶段和检索阶段各自承担什么任务？",
+    "ground_truth": "图构建阶段对多结构文档进行结构识别、模板匹配和统一图构建，将异构文档映射为统一层级图结构G；检索阶段依据问题类型选择检索模板，在文档级、条款级、内容块级和表格字段级逐层收缩候选空间，并沿图关系进行受控扩展，形成最终证据集合。",
+    "relevant_chunks": [
+      "7#8",
+      "7#9"
+    ],
+    "doc_name": "hanspub_mdhsg_rag.pdf",
+    "type": "comparison"
+  },
+  {
+    "id": "cn23",
+    "question": "OptiCacheRAG模型通过什么机制对问题分级并匹配检索资源？",
+    "ground_truth": "通过问题分级机制，对低级问题采用轻量化检索，对全局性问题启用深度检索策略，动态匹配用户需求与检索资源。",
+    "relevant_chunks": [
+      "8#2"
+    ],
+    "doc_name": "hanspub_opticache_rag.pdf",
+    "type": "method"
+  },
+  {
+    "id": "cn24",
+    "question": "检索增强生成(RAG)技术如何缓解大模型幻觉问题？",
+    "ground_truth": "RAG结合信息检索技术与语言生成模型，通过从外部知识库中检索相关信息，并将其作为提示(prompt)输入给大模型，从而有效缓解大模型幻觉问题。",
+    "relevant_chunks": [
+      "8#6"
+    ],
+    "doc_name": "hanspub_opticache_rag.pdf",
+    "type": "method"
+  },
+  {
+    "id": "cn25",
+    "question": "传统RAG技术中静态检索与用户动态需求之间的矛盾具体表现在哪些方面？",
+    "ground_truth": "传统检索通常基于预定义的索引策略，难以动态适应用户查询的上下文或隐含意图；同时过度依赖检索结果，生成模型可能机械化地复制检索内容，缺乏深层理解或逻辑整合，导致回答冗余或碎片化，与用户期待的答案大相径庭。",
+    "relevant_chunks": [
+      "8#7"
+    ],
+    "doc_name": "hanspub_opticache_rag.pdf",
+    "type": "fact"
+  },
+  {
+    "id": "cn26",
+    "question": "GraphRAG相比传统RAG在检索方式和可解释性上有哪些改进，同时又存在什么成本问题？",
+    "ground_truth": "GraphRAG将文本数据转化为图结构，显式建模实体间的复杂关联，避免传统RAG对关键词匹配的过度依赖，并通过图遍历实现多跳检索，解决传统RAG难以适用于复杂逻辑的问题；还可根据子图关系链生成结果并标注来源路径，实现追溯依据，增强回答可解释性。但其在构建知识图谱和用户问答过程中多次调用LLM，造成大量算力消耗，系统响应时间大大拉长，综合考虑时间成本和算力成本，对效果提升难以形成正反馈。",
+    "relevant_chunks": [
+      "8#7",
+      "8#8"
+    ],
+    "doc_name": "hanspub_opticache_rag.pdf",
+    "type": "comparison"
+  },
+  {
+    "id": "cn27",
+    "question": "OptiCacheRAG 采用什么算法来自动更新 Redis 缓存？",
+    "ground_truth": "采用 LRU 算法来自动更新缓存。",
+    "relevant_chunks": [
+      "8#9"
+    ],
+    "doc_name": "hanspub_opticache_rag.pdf",
+    "type": "fact"
+  },
+  {
+    "id": "cn28",
+    "question": "RAG 的典型工作流程包括哪些阶段？",
+    "ground_truth": "典型工作流程始于知识库的构建与索引，将领域特定或最新知识整理后通过向量嵌入等技术进行高效索引；当用户提出查询时进入检索阶段，利用查询内容从知识库中召回语义上最相关的文档片段或信息；随后将检索到的相关上下文信息增强到原始用户查询中，形成更为丰富和有针对性提示；最终 LLM 接收到增强后的提示后，结合自身语言理解和生成能力，生成基于事实、更为准确、相关且显著减少“幻觉”的答案。",
+    "relevant_chunks": [
+      "8#11"
+    ],
+    "doc_name": "hanspub_opticache_rag.pdf",
+    "type": "method"
+  },
+  {
+    "id": "cn29",
+    "question": "PV-RAG模型综合应用了哪些技术来提升检索生成结果的准确性？",
+    "ground_truth": "PV-RAG模型综合应用了大语言模型LangChain框架、稀疏与稠密检索混合策略以及改进的查询改写机制，显著提升检索生成结果的准确性。",
+    "relevant_chunks": [
+      "9#1"
+    ],
+    "doc_name": "hanspub_pv_rag.pdf",
+    "type": "method"
+  },
+  {
+    "id": "cn30",
+    "question": "PV-RAG模型构建时以什么作为数据补充，旨在解决大语言模型在药物警戒领域应用中的什么问题？",
+    "ground_truth": "以权威的药物说明书作为数据补充，旨在解决大语言模型在药物警戒领域应用中出现的信息不准确和高冗余问题。",
+    "relevant_chunks": [
+      "9#4"
+    ],
+    "doc_name": "hanspub_pv_rag.pdf",
+    "type": "method"
+  },
+  {
+    "id": "cn31",
+    "question": "PV-RAG 能从多少条药品说明书中精准匹配出各类信息？",
+    "ground_truth": "13,639 条药品说明书。",
+    "relevant_chunks": [
+      "9#5"
+    ],
+    "doc_name": "hanspub_pv_rag.pdf",
+    "type": "fact"
+  },
+  {
+    "id": "cn32",
+    "question": "Med-PaLM 2 在医疗问答中的表现如何？",
+    "ground_truth": "Med-PaLM 2 在医疗问答中表现出更高专业度，回答准确率与人类医生水平接近。",
+    "relevant_chunks": [
+      "9#6"
+    ],
+    "doc_name": "hanspub_pv_rag.pdf",
+    "type": "fact"
+  },
+  {
+    "id": "cn33",
+    "question": "PV-RAG模型由哪四个部分组成？",
+    "ground_truth": "PV-RAG模型分为四个部分：检索部分、文本提取部分、查询改写部分和生成部分。",
+    "relevant_chunks": [
+      "9#7"
+    ],
+    "doc_name": "hanspub_pv_rag.pdf",
+    "type": "fact"
+  },
+  {
+    "id": "cn34",
+    "question": "在检索阶段，BM25与DPR的检索结果是如何合并的？合并后的候选文档集合有什么特点？",
+    "ground_truth": "将BM25与DPR的检索结果取并集，即R_UNION(q)=R_BM25(q)∪R_DPR(q)，从而构建更全面的候选文档集合，形成候选文档片段的多样化集合。",
+    "relevant_chunks": [
+      "9#8"
+    ],
+    "doc_name": "hanspub_pv_rag.pdf",
+    "type": "method"
+  }
+]

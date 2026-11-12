@@ -172,15 +172,24 @@ def chunk_text(text: str) -> list[str]:
 
 
 def _split_sections(text: str) -> list[tuple[str, str]]:
-    """按 Markdown 标题（#~####）拆章：返回 [(标题行, 章节正文)]。"""
+    """按 Markdown 标题（#~####）或页码标记拆章：返回 [(标题行, 章节正文)]。
+
+    为什么也要按页拆：学术 PDF 的章节标题（如 "2. RETRIEVAL"）字号常与正文接近，
+    解析阶段无法识别为大字号标题。若只认 Markdown 标题，整篇论文会落入单一 section，
+    parent 被截断到 PARENT_MAX_TOKENS（2000 token），导致每次检索都只能看到论文开头，
+    中后段的论据永远进不了上下文。以 [第N页] 作为兜底边界可将 parent 控制在单页量级。
+    """
     sections: list[tuple[str, str]] = []
     current_title = ""
     current_body: list[str] = []
     for line in text.split("\n"):
-        if TITLE_RE.match(line.strip()):
+        stripped = line.strip()
+        is_title = bool(TITLE_RE.match(stripped))
+        is_page = bool(PAGE_RE.fullmatch(stripped))
+        if is_title or is_page:
             if current_title or any(l.strip() for l in current_body):
                 sections.append((current_title, "\n".join(current_body)))
-            current_title = line.strip()
+            current_title = stripped
             current_body = []
         else:
             current_body.append(line)

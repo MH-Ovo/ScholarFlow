@@ -34,6 +34,17 @@ class SourceOut(BaseModel):
     relevance: float
     source_label: str
     page_nos: list[int] = []
+    meta: dict = {}
+
+
+class SourceFulltextOut(BaseModel):
+    """知网来源全文获取/入库状态。"""
+    state: str  # pending / in_progress / indexed / failed
+    document_id: int | None = None
+    document_name: str = ""
+    size_bytes: int = 0
+    chunk_count: int = 0
+    reason: str | None = None
 
 
 class ReportOut(BaseModel):

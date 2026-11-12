@@ -12,13 +12,32 @@ class Settings(BaseSettings):
         env_file=BASE_DIR / ".env", env_file_encoding="utf-8", extra="ignore"
     )
 
-    # LLM
+    # DeepSeek：保留给 Web/知网 tool search（/v1/tools/search）使用
     deepseek_api_key: str = ""
     deepseek_base_url: str = "https://api.deepseek.com"
     deepseek_model: str = "deepseek-v4-flash"
 
+    # 对话模型（任意 OpenAI 兼容端点：商汤 SenseNova / Qwen / GLM / Ollama 等）。
+    # 留空 = 回退 DeepSeek，保持旧行为。
+    llm_api_key: str = ""
+    llm_base_url: str = ""
+    llm_model: str = ""
+
     # Web 搜索
     tavily_api_key: str = ""
+
+    # 单源故障注入（评测/演练用；默认关闭）
+    fault_inject_source: str = ""       # arxiv,web,cnki 或 *
+    fault_inject_mode: str = "timeout"  # timeout|rate_limit|auth|error|empty|unreachable
+    fault_inject_rate: float = 1.0      # 1.0=必现；<1 按概率触发
+
+    # 知网检索：CNKI-Enhanced-MCP（stdio 子进程），不可用时降级为 site:cnki.net 搜索
+    cnki_mode: str = "auto"        # auto | mcp | fallback
+    cnki_enabled: bool = True      # A/B 开关：false 时整个知网源跳过
+    cnki_force: bool = False       # 评测用：强制把 cnki 加入 Planner 的 plan
+    cnki_mcp_exe: str = ""         # 留空则从 LOCALAPPDATA 默认路径查找
+    cnki_data_dir: str = ""        # 留空则用 exe 同级 data/
+    cnki_max_results: int = 5      # 单次检索返回上限
 
     # 本地模型（向量/精排）
     hf_home: str = "../../models"
@@ -34,6 +53,8 @@ class Settings(BaseSettings):
 
     # 知识库检索相关度阈值：低于此值的片段视为无关（输出"未找到相关信息"）
     kb_min_score: float = 0.45
+    # 表格题报告上下文条数：表格行通常集中在少数切片，缩小窗口可降低 TPM 压力并减少干扰
+    table_report_sources: int = 6
 
     # PDF 智能解析（P1：类型分流 + 版面还原 + 图片 OCR + 页标记）
     pdf_ocr_enabled: bool = True       # false 回退 pypdf 纯文本提取
@@ -41,8 +62,17 @@ class Settings(BaseSettings):
     pdf_margin_top: float = 0.05       # 页眉剔除区（页高 5% 内）
     pdf_margin_bottom: float = 0.95    # 页脚剔除区（页高 95% 以下）
 
+    # GROBID 章节结构抽取：auto=优先 GROBID，失败回退 PyMuPDF；pymupdf=只用旧解析
+    parser_mode: str = "auto"          # auto | grobid | pymupdf
+    grobid_url: str = "http://127.0.0.1:8070"
+    grobid_timeout: float = 180.0
+
     # 上传限制
     max_upload_mb: int = 100           # 单文件上传上限（MB）
+    # 批量入库时每篇最多保留切片数（0=全部）；用于 120+ 篇覆盖的快速建库/评测
+    ingest_max_chunks: int = 0
+    # 批量入库只算 dense、不写 sparse（加速；检索仍可回退 dense）
+    ingest_dense_only: bool = False
 
     # VLM 图表多模态理解（OpenAI 兼容，mimo-v2.5；Key 留空自动关闭）
     vlm_api_key: str = ""
@@ -58,10 +88,24 @@ class Settings(BaseSettings):
     kb_relax_min_score: float = 0.35
     # 混合检索开关（bge-m3 dense+sparse 双路 RRF）；false 回退纯 dense
     hybrid_search: bool = True
+    # 页码感知精排：有 page_nos 的切片加一点分数，优先把可回溯原文的段落排到前面
+    paged_chunk_boost: float = 0.03
+    # 检索源动态路由：true=SendAPI 只分发 Planner 规划的源；false=旧固定扇出（A/B 用）
+    dynamic_routing: bool = True
     # 查询增强：提问前 LLM 改写+关键词扩展（false 回退原问题直接检索）
     query_processing: bool = True
     # 多查询检索：改写时生成 sub_queries 变体，多路语义检索后跨查询 RRF 合并（false 仅主查询）
     multi_query: bool = True
+    # 精排与 RRF 的混合系数：1.0 = 纯精排（默认），<1 时按 alpha·精排分 + (1-alpha)·RRF名次分 排序。
+    # 纯精排会把"开头是作者列表/公式"的切片压到底（实测 sf01 排 40、sf30 排 46）。
+    rerank_blend_alpha: float = 1.0
+    # 跨语言检索：把中文问题经 LLM 转成英文重述，作为独立一路参与 RRF 合并。
+    # 动机是中英混排知识库下，中文查询的向量偏向中文切片，英文原文排不上来
+    # （实测 sf06 中文查询排名 3、英文查询排名 1）。开关用于 A/B 验证其净收益。
+    en_query_enabled: bool = True
+    # 英文重述路的 RRF 权重。中文路与子查询等权时，英文路即使把正确切片排到第 1，
+    # 也会被多条中文路累积的分数稀释（实测 sf15/sf27/sf28/sf30 英文路均排第 1 却进不了 top-12）。
+    en_query_weight: float = 2.0
     # HyDE：LLM 生成假设性答案作为一路检索变体（每问 +1 次 LLM 调用，评估侧结果有缓存）。
     # 默认关闭——A/B 实测单独收益微弱（R@12 0.533 vs 0.523），与兄弟扩展叠加反而略降
     # （sibling_hyde 0.700 < sibling 0.725，变体候选挤占窗口）；需要时可开
@@ -96,7 +140,35 @@ class Settings(BaseSettings):
 
     @property
     def llm_enabled(self) -> bool:
-        return bool(self.deepseek_api_key.strip())
+        return bool(self.chat_api_key)
+
+    @property
+    def chat_api_key(self) -> str:
+        """对话模型 key：显式 LLM_API_KEY 优先，否则回退 DeepSeek。"""
+        return (self.llm_api_key or self.deepseek_api_key).strip()
+
+    @property
+    def chat_base_url(self) -> str:
+        if self.llm_api_key.strip():
+            return (self.llm_base_url or self.deepseek_base_url).strip()
+        return self.deepseek_base_url.strip()
+
+    @property
+    def chat_model(self) -> str:
+        if self.llm_api_key.strip():
+            return (self.llm_model or self.deepseek_model).strip()
+        return self.deepseek_model.strip()
+
+    @property
+    def chat_provider(self) -> str:
+        base = self.chat_base_url.lower()
+        if "sensenova" in base:
+            return "sensenova"
+        if "deepseek" in base:
+            return "deepseek"
+        if "ollama" in base or "11434" in base:
+            return "ollama"
+        return "openai"
 
     @property
     def tavily_enabled(self) -> bool:

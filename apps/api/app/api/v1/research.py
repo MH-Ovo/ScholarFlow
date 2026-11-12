@@ -2,22 +2,23 @@
 import asyncio
 import json
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, BackgroundTasks, HTTPException
 from fastapi.responses import PlainTextResponse, StreamingResponse
 from sqlalchemy import select
 
 from app.agents.events import EVENT_BUS
 from app.core.timeutil import fmt_dt
 from app.db.session import SessionLocal
-from app.models.research import Message, Report, ResearchStep, ResearchTask, Source
+from app.models.research import Document, Message, Report, ResearchStep, ResearchTask, Source
 from app.schemas.research import (
     CreateResearchRequest,
     CreateResearchResponse,
     FollowupRequest,
+    SourceFulltextOut,
     TaskDetailOut,
     TaskSummaryOut,
 )
-from app.services import research_service
+from app.services import fulltext_service, research_service
 
 router = APIRouter(prefix="/research", tags=["research"])
 
@@ -104,7 +105,8 @@ async def get_research(task_id: str):
         sources=[
             {"ref_no": s.ref_no, "type": s.type, "title": s.title, "url": s.url,
              "snippet": s.snippet, "relevance": s.relevance, "source_label": s.source_label,
-             "page_nos": (s.meta_json or {}).get("page_nos", [])}
+             "page_nos": (s.meta_json or {}).get("page_nos", []),
+             "meta": s.meta_json or {}}
             for s in sources
         ],
         report=(
@@ -177,6 +179,66 @@ async def followup_research(task_id: str, body: FollowupRequest):
         # 任务仍在流水线中：拒绝并发重跑（否则步骤/来源被双写、SSE 事件交错）
         raise HTTPException(status_code=409, detail="task is still running")
     return {"ok": True}
+
+
+@router.post("/{task_id}/sources/{ref_no}/fulltext", response_model=SourceFulltextOut)
+async def fetch_source_fulltext(task_id: str, ref_no: int, background_tasks: BackgroundTasks):
+    """对知网来源触发全文获取：下载 PDF → 登记文档 → 后台解析入库。
+
+    调研主流程只取摘要；该接口是用户主动触发的独立能力。下载是同步的
+    （实测 13–40 秒），解析/切片/向量化交给后台任务，返回后由前端轮询
+    `GET /documents/{document_id}` 或本接口获取最终状态。
+    """
+    async with SessionLocal() as db:
+        task = await db.get(ResearchTask, task_id)
+        if task is None:
+            raise HTTPException(status_code=404, detail="task not found")
+        src = (
+            await db.execute(
+                select(Source).where(Source.task_id == task_id, Source.ref_no == ref_no)
+            )
+        ).scalars().first()
+        if src is None:
+            raise HTTPException(status_code=404, detail="source not found")
+        if src.type != "cnki":
+            raise HTTPException(status_code=422, detail="仅知网来源支持获取全文")
+
+        meta = src.meta_json or {}
+        record_ref = str(meta.get("record_ref") or "").strip()
+        if not record_ref:
+            raise HTTPException(
+                status_code=422,
+                detail="该来源没有 record_ref（可能是站内降级结果），无法下载全文",
+            )
+
+        # 已登记过：直接返回当前状态，避免重复下载
+        document_id = meta.get("document_id")
+        if document_id is not None:
+            try:
+                doc = await db.get(Document, int(document_id))
+            except (TypeError, ValueError):
+                doc = None
+            if doc is not None:
+                if doc.status == "indexed":
+                    return SourceFulltextOut(
+                        state="indexed", document_id=doc.id, document_name=doc.name,
+                        size_bytes=doc.size_bytes, chunk_count=doc.chunk_count,
+                    )
+                if doc.status in {"pending", "parsing", "embedding"}:
+                    return SourceFulltextOut(
+                        state="in_progress", document_id=doc.id, document_name=doc.name,
+                        size_bytes=doc.size_bytes, chunk_count=doc.chunk_count,
+                    )
+                # failed → 继续往下走，由 service 清理残留并重试
+
+        source_id, title = src.id, src.title
+
+    result = await fulltext_service.prepare_cnki_document(source_id, record_ref, title)
+    if result["state"] == "pending" and result.get("document_id"):
+        background_tasks.add_task(
+            fulltext_service.ingest_and_sync, result["document_id"], source_id
+        )
+    return SourceFulltextOut(**result)
 
 
 @router.get("/{task_id}/export", response_class=PlainTextResponse)

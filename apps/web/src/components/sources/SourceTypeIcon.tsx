@@ -1,4 +1,4 @@
-import { Building2, FileText, Globe, GraduationCap, Newspaper, ScrollText } from "lucide-react";
+import { Building2, FileText, Globe, GraduationCap, Library, Newspaper, ScrollText } from "lucide-react";
 import type { SourceType } from "@/types";
 import { cn } from "@/lib/utils";
 
@@ -10,6 +10,8 @@ const TYPE_STYLE: Record<SourceType, { icon: typeof Globe; fg: string; bg: strin
   news: { icon: Newspaper, fg: "text-orange-600", bg: "bg-orange-50" },
   patent: { icon: ScrollText, fg: "text-rose-600", bg: "bg-rose-50" },
   report: { icon: FileText, fg: "text-emerald-600", bg: "bg-emerald-50" },
+  // 知网用红色书库图标，与 arXiv/网页来源区分
+  cnki: { icon: Library, fg: "text-red-600", bg: "bg-red-50" },
 };
 
 export function SourceTypeIcon({ type, className }: { type: SourceType; className?: string }) {

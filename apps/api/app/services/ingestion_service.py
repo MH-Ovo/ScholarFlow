@@ -10,6 +10,7 @@ from pathlib import Path
 from sqlalchemy import select
 
 from app.core.config import get_settings
+from app.core.text import normalize_fullwidth
 from app.db.session import SessionLocal
 from app.models.research import Document, DocumentChunk
 from app.rag.chunker import chunk_page_nos, chunk_text_hierarchical
@@ -48,9 +49,13 @@ async def ingest_document(doc_id: int) -> None:
     try:
         abs_path = UPLOAD_DIR / file_path
         text = await asyncio.to_thread(parse_file, abs_path, doc_type)
+        # 知网 PDF 含全角数字（如 ２０２５），入库前统一转半角，否则按 "2025" 检索不到
+        text = normalize_fullwidth(text)
         chunk_units = chunk_text_hierarchical(text)  # [{parent, child}]
         if not chunk_units:
             raise RuntimeError("解析后未提取到有效文本")
+        if settings.ingest_max_chunks > 0:
+            chunk_units = chunk_units[: settings.ingest_max_chunks]
         child_texts = [u["child"] for u in chunk_units]
         parent_texts = [u["parent"] for u in chunk_units]
 
@@ -69,12 +74,20 @@ async def ingest_document(doc_id: int) -> None:
         # 混合编码：bge-m3 dense + sparse 词法权重（一次前向）；模型不可用降级纯 dense
         from app.rag.models import encode_hybrid
 
-        dense_vecs, sparse_vecs = await asyncio.to_thread(encode_hybrid, child_texts)
-        if dense_vecs is None:
+        if settings.ingest_dense_only:
             dense_vecs = await asyncio.to_thread(
-                lambda: embedder.encode(child_texts, batch_size=8, normalize_embeddings=True).tolist()
+                lambda: embedder.encode(
+                    child_texts, batch_size=32, normalize_embeddings=True
+                ).tolist()
             )
             sparse_vecs = None
+        else:
+            dense_vecs, sparse_vecs = await asyncio.to_thread(encode_hybrid, child_texts)
+            if dense_vecs is None:
+                dense_vecs = await asyncio.to_thread(
+                    lambda: embedder.encode(child_texts, batch_size=32, normalize_embeddings=True).tolist()
+                )
+                sparse_vecs = None
 
         async with SessionLocal() as db:
             new_chunks: list[DocumentChunk] = [

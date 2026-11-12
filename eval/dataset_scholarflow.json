@@ -1,0 +1,315 @@
+[
+  {
+    "id": "sf01",
+    "question": "RAG 模型中的参数化记忆和非参数化记忆分别是什么？",
+    "ground_truth": "参数化记忆是一个预训练的 seq2seq 模型，非参数化记忆是 Wikipedia 的稠密向量索引，通过预训练的神经检索器访问。",
+    "relevant_chunks": [
+      "3#1"
+    ],
+    "doc_name": "rag_original.pdf",
+    "type": "method"
+  },
+  {
+    "id": "sf02",
+    "question": "RAG 中如何对潜在文档进行边缘化（marginalize）？",
+    "ground_truth": "使用 top-K 近似进行边缘化，可以按每个输出（假设同一文档负责所有 token）或按每个 token（不同文档负责不同 token）进行。",
+    "relevant_chunks": [
+      "3#3",
+      "3#4"
+    ],
+    "doc_name": "rag_original.pdf",
+    "type": "method"
+  },
+  {
+    "id": "sf03",
+    "question": "RAG 模型在哪些开放域问答任务上取得了 state-of-the-art 结果？",
+    "ground_truth": "在 open Natural Questions、WebQuestions 和 CuratedTrec 上取得了 state-of-the-art 结果。",
+    "relevant_chunks": [
+      "3#3",
+      "6#40",
+      "5#89"
+    ],
+    "doc_name": "rag_original.pdf",
+    "type": "fact",
+    "label_revised": "2026-11-06"
+  },
+  {
+    "id": "sf04",
+    "question": "RAG-Sequence 模型与 RAG-Token 模型在生成每个目标 token 时使用文档的方式有何不同？",
+    "ground_truth": "RAG-Sequence 模型使用同一个检索到的文档来预测每个目标 token；而 RAG-Token 模型可以基于不同的文档来预测每个目标 token。",
+    "relevant_chunks": [
+      "3#4"
+    ],
+    "doc_name": "rag_original.pdf",
+    "type": "method"
+  },
+  {
+    "id": "sf05",
+    "question": "RAG 的检索组件 pη(z|x) 基于 DPR，DPR 采用什么架构，其中 d(z) 和 q(x) 分别由什么产生？",
+    "ground_truth": "DPR 采用 bi-encoder 架构；d(z) 是由 BERTBASE 文档编码器产生的文档稠密表示，q(x) 是由同样基于 BERTBASE 的查询编码器产生的查询表示。",
+    "relevant_chunks": [
+      "3#5"
+    ],
+    "doc_name": "rag_original.pdf",
+    "type": "method"
+  },
+  {
+    "id": "sf06",
+    "question": "在训练 RAG 时，为什么保持文档编码器 BERTd（及索引）固定，只微调查询编码器 BERTq 和 BART 生成器？",
+    "ground_truth": "因为训练中更新文档编码器 BERTd 代价高昂，需要像 REALM 预训练时那样定期更新文档索引；作者发现这一步对强性能并非必要，因此保持文档编码器（及索引）固定，只微调查询编码器 BERTq 和 BART 生成器。",
+    "relevant_chunks": [
+      "3#6"
+    ],
+    "doc_name": "rag_original.pdf",
+    "type": "analysis"
+  },
+  {
+    "id": "sf07",
+    "question": "在实验中，作者使用哪个时间版本的Wikipedia dump作为非参数知识源，并且每篇Wikipedia文章被切分成多少词的chunk？",
+    "ground_truth": "使用2018年12月的Wikipedia dump，每篇文章被切分成互不重叠的100词chunk。",
+    "relevant_chunks": [
+      "3#7"
+    ],
+    "doc_name": "rag_original.pdf",
+    "type": "fact"
+  },
+  {
+    "id": "sf08",
+    "question": "在Abstractive Question Answering实验中，作者使用哪个任务来测试RAG的自然语言生成能力，并且是否使用了该任务提供的gold passages？",
+    "ground_truth": "使用MSMARCO NLG task v2.1；作者不使用提供的passages，只使用问题和答案，将其作为开放域抽象式QA任务处理。",
+    "relevant_chunks": [
+      "3#8"
+    ],
+    "doc_name": "rag_original.pdf",
+    "type": "fact"
+  },
+  {
+    "id": "sf09",
+    "question": "在Jeopardy Question Generation实验中，作者使用什么指标进行评估，并进行了哪两种人工评估？",
+    "ground_truth": "使用SQuAD-tuned的Q-BLEU-1指标评估；并进行了两种人工评估，一种评估生成的事实性（factuality），一种评估特异性（specificity）。",
+    "relevant_chunks": [
+      "3#9"
+    ],
+    "doc_name": "rag_original.pdf",
+    "type": "method"
+  },
+  {
+    "id": "sf10",
+    "question": "在成对比较评估中，评估者被要求从哪四个选项中选择一个？",
+    "ground_truth": "问题A更好、问题B更好、两者都好、两者都不好。",
+    "relevant_chunks": [
+      "3#10"
+    ],
+    "doc_name": "rag_original.pdf",
+    "type": "method"
+  },
+  {
+    "id": "sf11",
+    "question": "在NQ任务中，当正确答案不在任何检索到的文档中时，RAG能达到多少准确率？",
+    "ground_truth": "11.8%",
+    "relevant_chunks": [
+      "3#11"
+    ],
+    "doc_name": "rag_original.pdf",
+    "type": "fact"
+  },
+  {
+    "id": "sf12",
+    "question": "在Open MS-MARCO NLG任务上，RAG-Sequence比BART在BLEU和ROUGE-L上分别高出多少分？",
+    "ground_truth": "BLEU高出2.6分，ROUGE-L高出2.6分。",
+    "relevant_chunks": [
+      "3#12"
+    ],
+    "doc_name": "rag_original.pdf",
+    "type": "fact"
+  },
+  {
+    "id": "sf13",
+    "question": "这篇综述将RAG范式的发展划分为哪三种类型？",
+    "ground_truth": "Naive RAG、Advanced RAG 和 Modular RAG。",
+    "relevant_chunks": [
+      "4#1",
+      "4#5"
+    ],
+    "doc_name": "rag_survey.pdf",
+    "type": "fact"
+  },
+  {
+    "id": "sf14",
+    "question": "RAG通过什么方式从外部知识库中检索相关文档片段？",
+    "ground_truth": "通过语义相似度计算（semantic similarity calculation）从外部知识库中检索相关文档片段。",
+    "relevant_chunks": [
+      "4#2"
+    ],
+    "doc_name": "rag_survey.pdf",
+    "type": "method"
+  },
+  {
+    "id": "sf15",
+    "question": "这篇综述从100多项RAG研究中总结出了几个主要研究范式？",
+    "ground_truth": "三个主要研究范式。",
+    "relevant_chunks": [
+      "4#3",
+      "5#11"
+    ],
+    "doc_name": "rag_survey.pdf",
+    "type": "fact",
+    "label_revised": "2026-11-06"
+  },
+  {
+    "id": "sf16",
+    "question": "论文将RAG的研究范式分为哪三个阶段？",
+    "ground_truth": "Naive RAG、Advanced RAG 和 Modular RAG。",
+    "relevant_chunks": [
+      "4#5"
+    ],
+    "doc_name": "rag_survey.pdf",
+    "type": "fact"
+  },
+  {
+    "id": "sf17",
+    "question": "在Naive RAG的检索阶段，系统如何选出用于扩展上下文的chunks？",
+    "ground_truth": "系统用与索引阶段相同的编码模型把查询转换为向量表示，计算查询向量与索引语料中chunks向量的相似度分数，优先检索与查询相似度最高的Top K个chunks，并将这些chunks作为prompt中的扩展上下文。",
+    "relevant_chunks": [
+      "4#7"
+    ],
+    "doc_name": "rag_survey.pdf",
+    "type": "method"
+  },
+  {
+    "id": "sf18",
+    "question": "Advanced RAG为解决索引问题采用了哪些索引技术改进？",
+    "ground_truth": "通过使用sliding window方法、细粒度分割（fine-grained segmentation）以及引入metadata来改进索引技术。",
+    "relevant_chunks": [
+      "4#8"
+    ],
+    "doc_name": "rag_survey.pdf",
+    "type": "method"
+  },
+  {
+    "id": "sf19",
+    "question": "Modular RAG 相比前两种 RAG 范式（Naive 和 Advanced）在架构上有什么主要优势？",
+    "ground_truth": "Modular RAG 超越了前两种 RAG 范式，提供更强的适应性和通用性，支持顺序处理以及跨组件的端到端集成训练，并引入了额外的专用模块（如 Search 模块、Memory 模块等）。",
+    "relevant_chunks": [
+      "4#10"
+    ],
+    "doc_name": "rag_survey.pdf",
+    "type": "analysis"
+  },
+  {
+    "id": "sf20",
+    "question": "在 Modular RAG 中，Predict 模块的作用是什么？",
+    "ground_truth": "Predict 模块旨在通过 LLM 直接生成上下文来减少冗余和噪声，从而确保相关性和准确性。",
+    "relevant_chunks": [
+      "4#11"
+    ],
+    "doc_name": "rag_survey.pdf",
+    "type": "fact"
+  },
+  {
+    "id": "sf21",
+    "question": "根据片段，RAG 与 Fine-tuning（FT）在知识更新方面各有什么特点？",
+    "ground_truth": "RAG 在动态环境中表现出色，能提供实时知识更新并有效利用外部知识源，且具有高可解释性；而 FT 更静态，更新需要重新训练，但能对模型行为和风格进行深度定制。",
+    "relevant_chunks": [
+      "4#12"
+    ],
+    "doc_name": "rag_survey.pdf",
+    "type": "analysis"
+  },
+  {
+    "id": "sf22",
+    "question": "在RAG语境下，从数据源高效检索相关文档时涉及哪些关键问题？",
+    "ground_truth": "涉及的关键问题包括：检索源（retrieval source）、检索粒度（retrieval granularity）、检索的预处理（pre-processing of the retrieval），以及相应embedding模型的选择。",
+    "relevant_chunks": [
+      "4#13"
+    ],
+    "doc_name": "rag_survey.pdf",
+    "type": "fact"
+  },
+  {
+    "id": "sf23",
+    "question": "在表格中，CoG [29] 使用的检索源、检索粒度、训练方式和迭代方式分别是什么？",
+    "ground_truth": "CoG [29] 的检索源是 Wikipedia，检索粒度是 Phrase，训练方式是 Pre-training，迭代方式是 Iterative。",
+    "relevant_chunks": [
+      "4#15"
+    ],
+    "doc_name": "rag_survey.pdf",
+    "type": "fact"
+  },
+  {
+    "id": "sf24",
+    "question": "GenRead [13] 用什么替代了检索器，并发现了什么？",
+    "ground_truth": "GenRead [13] 用 LLM generator 替代了检索器，并发现 LLM 生成的上下文往往包含更准确的答案，因为其与因果语言建模的预训练目标更对齐。",
+    "relevant_chunks": [
+      "4#17"
+    ],
+    "doc_name": "rag_survey.pdf",
+    "type": "method",
+    "unanswerable": true,
+    "label_revised": "2026-11-06"
+  },
+  {
+    "id": "sf25",
+    "question": "在文本检索中，检索粒度从细到粗包括哪些类型？",
+    "ground_truth": "包括 Token、Phrase、Sentence、Proposition、Chunks、Document。",
+    "relevant_chunks": [
+      "4#18"
+    ],
+    "doc_name": "rag_survey.pdf",
+    "type": "fact"
+  },
+  {
+    "id": "sf26",
+    "question": "KGP 提出的用知识图谱构建多文档索引的方法中，该知识图谱的节点和边分别代表什么？",
+    "ground_truth": "节点代表文档中的段落或结构（如页面和表格），边表示段落之间的语义/词汇相似性或文档结构内部的关系。",
+    "relevant_chunks": [
+      "4#19",
+      "7#5"
+    ],
+    "doc_name": "rag_survey.pdf",
+    "type": "fact",
+    "label_revised": "2026-11-06"
+  },
+  {
+    "id": "sf27",
+    "question": "在查询扩展（Query Expansion）中，Chain-of-Verification（CoVe）通过什么方式减少幻觉？",
+    "ground_truth": "扩展后的查询由 LLM 进行验证，经过验证的扩展查询通常具有更高的可靠性，从而达到减少幻觉的效果。",
+    "relevant_chunks": [
+      "4#20"
+    ],
+    "doc_name": "rag_survey.pdf",
+    "type": "method",
+    "unanswerable": true,
+    "label_revised": "2026-11-06"
+  },
+  {
+    "id": "sf28",
+    "question": "HyDE 方法构造了什么，并且它关注的是哪种嵌入相似性？",
+    "ground_truth": "HyDE 构造假设性文档（假定为原始查询的答案），它关注的是从答案到答案的嵌入相似性，而不是为问题或查询寻找嵌入相似性。",
+    "relevant_chunks": [
+      "4#21"
+    ],
+    "doc_name": "rag_survey.pdf",
+    "type": "method"
+  },
+  {
+    "id": "sf29",
+    "question": "在什么情况下有必要在自己的领域数据集上微调嵌入模型？",
+    "ground_truth": "当上下文与预训练语料显著偏离时，尤其是在医疗、法律等充满专有术语的高度专业化领域，有必要在自己的领域数据集上微调嵌入模型以缓解这种差异。",
+    "relevant_chunks": [
+      "4#22"
+    ],
+    "doc_name": "rag_survey.pdf",
+    "type": "method"
+  },
+  {
+    "id": "sf30",
+    "question": "BGM 在检索器和 LLM 之间训练了什么模型，该模型的目标是什么？",
+    "ground_truth": "BGM 保持检索器和 LLM 固定，在两者之间训练一个 bridge Seq2Seq 模型；该桥接模型旨在将检索到的信息转换为 LLM 能有效使用的格式，使其不仅能重排序，还能为每个查询动态选择段落，并可能采用重复等更高级策略。",
+    "relevant_chunks": [
+      "4#23"
+    ],
+    "doc_name": "rag_survey.pdf",
+    "type": "method"
+  }
+]

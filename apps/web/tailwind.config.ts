@@ -47,7 +47,7 @@ export default {
         sm: "calc(var(--radius) - 4px)",
       },
       fontFamily: {
-        sans: ["var(--font-inter)", "Inter", "PingFang SC", "Microsoft YaHei", "sans-serif"],
+        sans: ["Inter", "PingFang SC", "Microsoft YaHei", "system-ui", "sans-serif"],
       },
       keyframes: {
         "fade-in": {

@@ -18,9 +18,35 @@ async def lifespan(app: FastAPI):
     await init_db()
     await _recover_stale_tasks()
     llm = get_llm()
-    print(f"[kra] LLM mode = {llm.mode} | Tavily = {settings.tavily_enabled}")
+    print(
+        f"[kra] LLM mode = {llm.mode} | WebSearch = "
+        f"{'deepseek' if settings.llm_enabled else 'mock'}"
+    )
     asyncio.create_task(_warmup_models())
+    if settings.cnki_enabled and (getattr(settings, "cnki_mode", "auto") or "auto").strip().lower() != "fallback":
+        asyncio.create_task(_warmup_cnki())
     yield
+
+
+async def _warmup_cnki() -> None:
+    """后台预热知网 MCP 长连接。
+
+    该 MCP 每次冷启动都要拉起浏览器（实测 20–60 秒），放在启动阶段预热，
+    避免第一次调研把这段时间算进用户等待。失败静默，首次真实调用会再尝试。
+    """
+    import time
+
+    t0 = time.time()
+    try:
+        from app.integrations import cnki_mcp
+
+        res = await cnki_mcp.warmup()
+        if res.get("status") == "ok":
+            print(f"[kra] 知网 MCP 预热完成（{time.time() - t0:.0f}s）", flush=True)
+        else:
+            print(f"[kra] 知网 MCP 未就绪：{res.get('detail')}", flush=True)
+    except Exception as exc:
+        print(f"[kra] 知网 MCP 预热跳过：{type(exc).__name__}: {exc}", flush=True)
 
 
 async def _warmup_models() -> None:
@@ -82,4 +108,8 @@ app.include_router(documents.kb_router, prefix="/api/v1")
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "llm_mode": get_llm().mode}
+    return {
+        "status": "ok",
+        "llm_mode": get_llm().mode,
+        "llm_model": settings.chat_model,
+    }

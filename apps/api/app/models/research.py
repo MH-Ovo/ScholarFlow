@@ -16,6 +16,7 @@ STEP_DEFS: list[tuple[str, str]] = [
     ("kb_search", "查询本地知识库"),
     ("paper_search", "检索学术论文"),
     ("web_search", "搜索网页信息"),
+    ("cnki_search", "检索知网文献"),
     ("graph_build", "建立知识关系图谱"),
     ("report_write", "生成分析报告"),
 ]

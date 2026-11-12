@@ -1,14 +1,8 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
 import "./globals.css";
 
-/** Inter 仅覆盖拉丁字母与数字（variable 子集，display=swap），中文继续走系统栈 */
-const inter = Inter({
-  subsets: ["latin"],
-  display: "swap",
-  variable: "--font-inter",
-});
-
+// Inter 通过系统字体栈回退：原实现使用 next/font/google，
+// 构建与 dev 时需访问 Google Fonts，在无外网环境下会阻塞页面渲染。
 export const metadata: Metadata = {
   title: "Knowledge Research Agent",
   description: "Your AI-powered assistant for enterprise knowledge research and analysis",
@@ -16,7 +10,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="zh-CN" className={inter.variable}>
+    <html lang="zh-CN">
       <body>{children}</body>
     </html>
   );

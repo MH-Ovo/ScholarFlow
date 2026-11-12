@@ -22,6 +22,7 @@ class ResearchState(TypedDict, total=False):
     kb_results: list[dict]
     paper_results: list[dict]
     web_results: list[dict]
+    cnki_results: list[dict]
     merged_sources: list[dict]       # 融合重排后、带 ref_no 与 relevance
     grade_results: list[dict]        # Retrieval Grader 打分结果
     retry_count: int                 # 重检索次数（上限 2）

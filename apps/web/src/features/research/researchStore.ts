@@ -11,13 +11,14 @@ import type {
   TimelineKind,
 } from "@/types";
 
-/** 与后端 STEP_DEFS 对齐（效果图2 顺序）：kb/论文/网页/报告启用，知识图谱已暂停 */
+/** 与后端 STEP_DEFS 对齐：kb/论文/网页/知网/报告启用，知识图谱已暂停 */
 const DEFAULT_STEPS: StepInfo[] = [
   { step_key: "kb_search", label: "查询本地知识库", order_index: 0, status: "pending", meta: {} },
   { step_key: "paper_search", label: "检索学术论文", order_index: 1, status: "pending", meta: {} },
   { step_key: "web_search", label: "搜索网页信息", order_index: 2, status: "pending", meta: {} },
-  { step_key: "graph_build", label: "建立知识关系图谱", order_index: 3, status: "paused", meta: {} },
-  { step_key: "report_write", label: "生成分析报告", order_index: 4, status: "pending", meta: {} },
+  { step_key: "cnki_search", label: "检索知网文献", order_index: 3, status: "pending", meta: {} },
+  { step_key: "graph_build", label: "建立知识关系图谱", order_index: 4, status: "paused", meta: {} },
+  { step_key: "report_write", label: "生成分析报告", order_index: 5, status: "pending", meta: {} },
 ];
 
 export type RunPhase = "idle" | "streaming" | "done" | "failed" | "interrupted";
@@ -49,6 +50,7 @@ interface ResearchState {
   applySnapshot: (d: TaskDetail, force?: boolean) => void;
   setInterrupted: () => void;
   selectSource: (refNo: number | null) => void;
+  updateSourceMeta: (refNo: number, meta: Partial<NonNullable<SourceItem["meta"]>>) => void;
 }
 
 const cloneSteps = () => DEFAULT_STEPS.map((s) => ({ ...s, meta: {} }));
@@ -68,8 +70,12 @@ function timelineText(event: string, data: Record<string, unknown>): { kind: Tim
       const t = String(data.type ?? "knowledge");
       const mode = String(data.sources ?? "kb_only");
       if (t === "chat") return { kind: "router", text: "意图识别：闲聊，跳过检索直接回答" };
+      const plan = Array.isArray(data.plan) ? (data.plan as string[]) : [];
+      const names = plan.map(
+        (p) => ({ kb: "知识库", paper: "论文", web: "网页", cnki: "知网" } as Record<string, string>)[p] ?? p,
+      );
       return mode === "multi"
-        ? { kind: "router", text: "意图识别：知识问题，三路全开（知识库 ∥ 论文 ∥ 网页）" }
+        ? { kind: "router", text: `意图识别：知识问题，多路全开（${names.join(" ∥ ") || "知识库"}）` }
         : { kind: "router", text: "意图识别：知识问题，先查本地知识库（渐进式）" };
     }
     case "step_started":
@@ -260,7 +266,7 @@ export const useResearchStore = create<ResearchState>((set, get) => ({
         if (data.type === "chat") {
           const pausedSteps: string[] = Array.isArray(data.paused_steps)
             ? (data.paused_steps as string[])
-            : ["kb_search", "paper_search", "web_search", "graph_build"];
+            : ["kb_search", "paper_search", "web_search", "cnki_search", "graph_build"];
           set({
             steps: state.steps.map((s) =>
               pausedSteps.includes(s.step_key)
@@ -299,6 +305,7 @@ export const useResearchStore = create<ResearchState>((set, get) => ({
           snippet: String(data.snippet ?? ""),
           relevance: Number(data.relevance ?? 0),
           source_label: String(data.source_label ?? ""),
+          meta: (data.meta as SourceItem["meta"]) ?? {},
         };
         if (state.sources.some((s) => s.title === item.title)) break; // 去重
         set({ sources: [...state.sources, item] });
@@ -383,6 +390,14 @@ export const useResearchStore = create<ResearchState>((set, get) => ({
   },
 
   selectSource: (refNo) => set({ selectedRefNo: refNo }),
+
+  /** 知网全文入库状态回写到来源 meta：卡片切换 Tab 重新挂载后仍能恢复状态 */
+  updateSourceMeta: (refNo, meta) =>
+    set({
+      sources: get().sources.map((s) =>
+        s.ref_no === refNo ? { ...s, meta: { ...(s.meta ?? {}), ...meta } } : s,
+      ),
+    }),
 
   /** SSE 快照：force=true 全量替换（断线兜底 + 完成时校准）；默认保守（本轮开始后不覆盖流式报告） */
   applySnapshot: (d, force = false) => {

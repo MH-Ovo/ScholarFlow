@@ -1,16 +1,19 @@
 import { Eye, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { relativeTime } from "@/lib/format";
+import { cn } from "@/lib/utils";
 import type { KbDocument } from "@/types";
 import { DocumentStatusBadge } from "./DocumentStatusBadge";
 
 /** 文档管理表格：名称/类型/大小/状态/切片/时间/操作 */
 export function DocumentTable({
   documents,
+  highlightedId,
   onPreview,
   onDelete,
 }: {
   documents: KbDocument[];
+  highlightedId?: number | null;
   onPreview: (doc: KbDocument) => void;
   onDelete: (doc: KbDocument) => void;
 }) {
@@ -30,7 +33,14 @@ export function DocumentTable({
         </thead>
         <tbody className="divide-y divide-border/60">
           {documents.map((d) => (
-            <tr key={d.id} className="transition-colors duration-300 hover:bg-accent/30">
+            <tr
+              key={d.id}
+              id={`kb-doc-${d.id}`}
+              className={cn(
+                "transition-colors duration-300 hover:bg-accent/30",
+                highlightedId === d.id && "bg-accent/60",
+              )}
+            >
               <td className="max-w-[320px] truncate px-4 py-2.5 font-medium" title={d.name}>
                 {d.name}
               </td>

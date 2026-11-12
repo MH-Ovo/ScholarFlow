@@ -13,7 +13,9 @@ CHAT_KEYWORDS = [
 
 # 用户点名外部信息/需要多方对比 → multi 三路全开（Mock 兜底启发式）
 MULTI_KEYWORDS = [
-    "网页", "网上", "网络", "上网", "搜索", "论文", "学术", "arxiv",
+    # 只保留“网页/时效/对比”类信号；论文/学术/arXiv 由 paper 单独判断，
+    # 否则“检索 RAG 学术论文”会被误判成 paper+web 双开（无效分支）。
+    "网页", "网上", "网络", "上网", "搜索",
     "最新", "趋势", "进展", "对比", "比较", "业界", "行业", "新闻",
 ]
 
@@ -23,10 +25,12 @@ def mock_route(query: str) -> dict:
     点名论文/网页关键词逐源置位；其余默认仅 KB。"""
     q = query.strip().lower()
     if any(k in q for k in CHAT_KEYWORDS) or len(q) <= 2:
-        return {"type": "chat", "kb": False, "paper": False, "web": False}
+        return {"type": "chat", "kb": False, "paper": False, "web": False, "cnki": False}
     paper = any(k in q for k in ("论文", "学术", "arxiv"))
     web = any(k in q for k in MULTI_KEYWORDS)
-    return {"type": "knowledge", "kb": True, "paper": paper, "web": web}
+    # 知网检索较慢（Playwright 起浏览器），只在明确提到中文文献需求时才规划
+    cnki = any(k in q for k in ("知网", "中文文献", "中文期刊", "国内研究", "中国学者"))
+    return {"type": "knowledge", "kb": True, "paper": paper, "web": web, "cnki": cnki}
 
 
 def mock_query_process(query: str) -> dict:

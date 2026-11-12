@@ -22,8 +22,11 @@ from sqlalchemy import select  # noqa: E402
 from app.agents.mock_data import mock_query_process  # noqa: E402
 from app.agents.nodes import (  # noqa: E402
     _apply_rerank,
+    _doc_languages,
     _expand_with_siblings,
     _hybrid_search,
+    _is_chinese,
+    _merge_by_rrf,
     _multi_query_search,
 )
 from app.agents.prompts import QUERY_PROCESS_PROMPT  # noqa: E402
@@ -54,7 +57,9 @@ async def _enhance_cached(llm, question: str) -> dict:
         if ENH_CACHE_PATH.exists()
         else {}
     )
-    if question in cache and "hyde" in cache[question]:
+    # 缓存命中条件必须含 en_query：旧缓存没有该字段时若直接返回，
+    # 新增的跨语言检索路会被静默跳过（实测指标因此完全没变）。
+    if question in cache and "hyde" in cache[question] and "en_query" in cache[question]:
         return cache[question]
     processed = await llm.extract_json(
         QUERY_PROCESS_PROMPT.format(query=question), mock_query_process(question)
@@ -64,6 +69,7 @@ async def _enhance_cached(llm, question: str) -> dict:
         "keywords": processed.get("keywords") or [],
         "sub_queries": processed.get("sub_queries") or [],
         "hyde": str(processed.get("hyde") or ""),
+        "en_query": str(processed.get("en_query") or ""),
     }
     ENH_CACHE_PATH.write_text(_json.dumps(cache, ensure_ascii=False, indent=1), encoding="utf-8")
     return cache[question]
@@ -75,7 +81,7 @@ async def production_kb_candidates(store, question: str, llm) -> list[dict]:
     llm 传 None 时退化为原问题单路检索（仍做兄弟扩展与精排）。
     """
     settings = get_settings()
-    sub_qs, hyde_text = [], ""
+    sub_qs, hyde_text, processed = [], "", None
     if llm is not None and settings.query_processing:
         processed = await _enhance_cached(llm, question)
         sub_qs = [
@@ -87,10 +93,19 @@ async def production_kb_candidates(store, question: str, llm) -> list[dict]:
 
     # 主查询用原话（与生产 kb_retriever_node 一致，见 ab_recall orig_multi 结论）
     pairs = [(question, None)]
-    pairs += [(s, None) for s in sub_qs]
+    weights = [1.0]
+    for s in sub_qs:
+        pairs.append((s, None))
+        weights.append(1.0)
     if hyde_text and hyde_text != question:
         pairs.append((hyde_text, None))
-    fused = await _multi_query_search(store, pairs, top_k=EVAL_TOP_K)
+        weights.append(1.0)
+    # 跨语言补充：中文问题的英文重述（与生产一致，受 en_query_enabled 控制）
+    en_query = str((processed or {}).get("en_query") or "").strip()
+    if settings.en_query_enabled and en_query and en_query != question:
+        pairs.append((en_query, None))
+        weights.append(float(settings.en_query_weight))
+    fused = await _multi_query_search(store, pairs, top_k=EVAL_TOP_K, weights=weights)
     if not fused and (sub_qs or hyde_text):
         fused = await _hybrid_search(store, question, None)
     if settings.sibling_expand and fused:
@@ -99,6 +114,12 @@ async def production_kb_candidates(store, question: str, llm) -> list[dict]:
     # 不做单文档配额（A/B 实测有害）；精排后由生产 merger 的 top-12 窗口截取
     if settings.rerank_enabled:
         fused = _apply_rerank(question, fused)
+    boost = float(getattr(settings, "paged_chunk_boost", 0.0) or 0.0)
+    if boost > 0 and fused:
+        for h in fused:
+            if h.get("page_nos"):
+                h["relevance"] = round(float(h.get("relevance", 0.0)) + boost, 4)
+        fused.sort(key=lambda x: x.get("relevance", 0.0), reverse=True)
     return fused
 
 
@@ -314,9 +335,9 @@ async def main() -> int:
     from langchain_openai import ChatOpenAI
     from ragas.llms import LangchainLLMWrapper
 
-    judge_model = settings.eval_judge_model or settings.deepseek_model
-    judge_base = settings.eval_judge_base_url or settings.deepseek_base_url
-    judge_key = settings.eval_judge_api_key or settings.deepseek_api_key
+    judge_model = settings.eval_judge_model or settings.chat_model
+    judge_base = settings.eval_judge_base_url or settings.chat_base_url
+    judge_key = settings.eval_judge_api_key or settings.chat_api_key
     print(f"[eval] ragas 裁判模型: {judge_model} @ {judge_base}", flush=True)
     chat = ChatOpenAI(
         model=judge_model, api_key=judge_key,

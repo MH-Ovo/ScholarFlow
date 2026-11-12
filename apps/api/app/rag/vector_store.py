@@ -15,6 +15,7 @@ from qdrant_client.models import (
     Distance,
     FieldCondition,
     Filter,
+    MatchAny,
     MatchValue,
     PointStruct,
     SparseVector,
@@ -99,14 +100,22 @@ class QdrantVectorStore:
             await self._client.upsert(collection_name=COLLECTION, points=structs)
 
     async def search_dense(
-        self, vector: list[float], top_k: int = 10, document_id: int | None = None
+        self,
+        vector: list[float],
+        top_k: int = 10,
+        document_id: int | None = None,
+        document_ids: list[int] | None = None,
     ) -> list[dict[str, Any]]:
-        return await self._search(vector, "dense", top_k, document_id)
+        return await self._search(vector, "dense", top_k, document_id, document_ids)
 
     async def search_sparse(
-        self, sparse: dict[str, Any], top_k: int = 10, document_id: int | None = None
+        self,
+        sparse: dict[str, Any],
+        top_k: int = 10,
+        document_id: int | None = None,
+        document_ids: list[int] | None = None,
     ) -> list[dict[str, Any]]:
-        query_filter = self._filter(document_id)
+        query_filter = self._filter(document_id, document_ids)
         response = await self._client.query_points(
             collection_name=COLLECTION,
             query=SparseVector(indices=sparse["indices"], values=sparse["values"]),
@@ -122,18 +131,36 @@ class QdrantVectorStore:
         using: str,
         top_k: int,
         document_id: int | None,
+        document_ids: list[int] | None = None,
     ) -> list[dict[str, Any]]:
         response = await self._client.query_points(
             collection_name=COLLECTION,
             query=vector,
             using=using,
             limit=top_k,
-            query_filter=self._filter(document_id),
+            query_filter=self._filter(document_id, document_ids),
         )
         return [self._to_hit(h) for h in response.points]
 
     @staticmethod
-    def _filter(document_id: int | None) -> Filter | None:
+    def _filter(
+        document_id: int | None,
+        document_ids: list[int] | None = None,
+    ) -> Filter | None:
+        """构造文档过滤条件。
+
+        `document_ids`（多文档）用于语言感知检索：英文问题只查英文文档，
+        避免中文文档在向量空间里把英文原文整体挤出候选集
+        （实测：不限定时英文标注命中 0.500，限定后 1.000）。
+        """
+        if document_ids:
+            return Filter(
+                must=[
+                    FieldCondition(
+                        key="document_id", match=MatchAny(any=list(document_ids))
+                    )
+                ]
+            )
         if document_id is None:
             return None
         return Filter(

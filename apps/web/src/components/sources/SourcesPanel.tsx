@@ -13,15 +13,23 @@ const TAB_TYPE: Record<string, SourceItem["type"] | null> = {
   Enterprise: "enterprise",
   Papers: "paper",
   Web: "web",
+  CNKI: "cnki",
 };
 
 /** 研究页右侧「Sources (n)」面板：Tab 筛选 + 点击展开内容 + 双向引用联动 */
-function SourcesPanelInner({ sources }: { sources: SourceItem[] }) {
+function SourcesPanelInner({
+  sources,
+  taskId,
+}: {
+  sources: SourceItem[];
+  taskId: string | null;
+}) {
   const [tab, setTab] = useState("All");
   const [expandedRef, setExpandedRef] = useState<number | null>(null);
   const [viewerSource, setViewerSource] = useState<SourceItem | null>(null);
   const selectedRefNo = useResearchStore((s) => s.selectedRefNo);
   const selectSource = useResearchStore((s) => s.selectSource);
+  const updateSourceMeta = useResearchStore((s) => s.updateSourceMeta);
 
   const filtered = useMemo(() => {
     const type = TAB_TYPE[tab];
@@ -83,10 +91,12 @@ function SourcesPanelInner({ sources }: { sources: SourceItem[] }) {
             <SourceItemCard
               key={`${s.ref_no}-${s.title}`}
               source={s}
+              taskId={taskId}
               selected={s.ref_no === selectedRefNo}
               expanded={s.ref_no === expandedRef}
               onToggle={() => handleToggle(s.ref_no)}
               onViewFull={setViewerSource}
+              onFulltextUpdated={(meta) => updateSourceMeta(s.ref_no, meta)}
             />
           ))}
           {filtered.length === 0 && (

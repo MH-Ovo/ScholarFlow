@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, Clock3, FileWarning, Layers, Loader2, XCircle } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ChunkPreviewDialog } from "@/components/kb/ChunkPreviewDialog";
 import { DocumentTable } from "@/components/kb/DocumentTable";
 import { UploadZone } from "@/components/kb/UploadZone";
@@ -13,8 +13,18 @@ import type { KbDocument } from "@/types";
 /** Knowledge Base：本地知识库管理（上传→解析→切片→向量化→检索） */
 export default function KnowledgeBasePage() {
   const queryClient = useQueryClient();
-  const revealRef = useReveal<HTMLDivElement>();  const [previewDoc, setPreviewDoc] = useState<KbDocument | null>(null);
+  const revealRef = useReveal<HTMLDivElement>();
+  const [previewDoc, setPreviewDoc] = useState<KbDocument | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [highlightId, setHighlightId] = useState<number | null>(null);
+  const targetDocId = useRef<number | null>(null);
+
+  // 从研究报告的「全文已入库」跳转：/knowledge-base?doc={id} → 定位并打开切片预览
+  useEffect(() => {
+    const raw = new URLSearchParams(window.location.search).get("doc");
+    const id = raw ? Number(raw) : NaN;
+    if (Number.isFinite(id)) targetDocId.current = id;
+  }, []);
 
   // isPending（而非 isLoading）：SSR 阶段 enabled=false 时 isFetching 恒为 false，
   // isLoading 会在服务端/客户端产生不同分支导致水合不一致
@@ -51,6 +61,23 @@ export default function KnowledgeBasePage() {
       deleteMutation.mutate(doc.id);
     }
   };
+
+  // 文档列表到达（或轮询刷新）后定位目标文档：打开切片预览并滚动到对应行
+  useEffect(() => {
+    const id = targetDocId.current;
+    if (!id || !docs?.length) return;
+    const doc = docs.find((d) => d.id === id);
+    if (!doc) return;
+    targetDocId.current = null;
+    setPreviewDoc(doc);
+    setPreviewOpen(true);
+    setHighlightId(id);
+    requestAnimationFrame(() => {
+      document
+        .getElementById(`kb-doc-${id}`)
+        ?.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+  }, [docs]);
 
   const statCards = [
     { icon: Layers, label: "文档总数", value: stats?.documents ?? 0 },
@@ -105,6 +132,7 @@ export default function KnowledgeBasePage() {
           ) : (
             <DocumentTable
               documents={docs ?? []}
+              highlightedId={highlightId}
               onPreview={(d) => {
                 setPreviewDoc(d);
                 setPreviewOpen(true);

@@ -131,7 +131,7 @@ export default function ResearchPage() {
       </div>
 
       <RightPanel>
-        <SourcesPanel sources={sources} />
+        <SourcesPanel sources={sources} taskId={taskId ?? null} />
         <GraphMiniPanel graph={graph} hint="知识图谱功能暂缓，将在后续版本启用" />
         <RunStatsPanel stats={stats} />
       </RightPanel>

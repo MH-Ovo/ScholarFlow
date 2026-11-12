@@ -65,7 +65,9 @@ def encode_hybrid(texts: list[str]) -> tuple[list[list[float]] | None, list[dict
     model = get_bge3()
     if model is None:
         return None, None
-    out = model.encode(texts, return_dense=True, return_sparse=True, max_length=512)
+    out = model.encode(
+        texts, return_dense=True, return_sparse=True, max_length=512, batch_size=32
+    )
     dense = [v.tolist() for v in out["dense_vecs"]]
     sparse = [
         {

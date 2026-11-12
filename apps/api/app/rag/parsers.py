@@ -29,6 +29,23 @@ def parse_file(path: str | Path, doc_type: str) -> str:
 # ---------------- PDF ----------------
 
 def _parse_pdf(path: Path) -> str:
+    mode = (settings.parser_mode or "auto").strip().lower()
+    if mode in ("auto", "grobid"):
+        try:
+            from app.rag.grobid_parser import parse_pdf_with_grobid
+
+            text = parse_pdf_with_grobid(path)
+            if text.strip():
+                return text
+        except Exception as exc:  # noqa: BLE001
+            print(
+                f"[kra][grobid] fallback to PyMuPDF: {type(exc).__name__}: {str(exc)[:160]}",
+                flush=True,
+            )
+    return _parse_pdf_pymupdf(path)
+
+
+def _parse_pdf_pymupdf(path: Path) -> str:
     from app.rag.ocr import ocr_image
 
     if not settings.pdf_ocr_enabled:
@@ -68,8 +85,48 @@ def _median_font_size(data: dict) -> float:
     return statistics.median(sizes) if sizes else 12.0
 
 
+def _order_by_columns(
+    items: list[tuple[float, float, float, str]], page_w: float, page_h: float
+) -> list[tuple[float, float, float, str]]:
+    """按栏还原阅读顺序。
+
+    原实现按 (y, text) 全局排序：双栏论文同一行的左右栏 y 坐标几乎相同，
+    会导致两栏文字逐行交错，切片内容不可读。这里先按 x 分布判定是否双栏：
+    - 单栏：维持按 y 排序；
+    - 双栏：跨栏元素分置页首/页尾，中间先左栏后右栏，各栏内按 y 排序。
+    """
+    if not items:
+        return items
+
+    mid = page_w / 2
+    tol = page_w * 0.08  # 中线容差带，容纳跨栏标题与居中图表
+
+    left = [it for it in items if it[2] <= mid + tol]
+    right = [it for it in items if it[1] >= mid - tol]
+    full = [it for it in items if it[2] > mid + tol and it[1] < mid - tol]
+
+    two_col = (
+        len(left) >= 3
+        and len(right) >= 3
+        and (len(left) + len(right)) >= len(items) * 0.6
+    )
+    if not two_col:
+        return sorted(items, key=lambda t: (t[0] // 8, t[1]))
+
+    head_cut = page_h * 0.30  # 页首跨栏区（标题/摘要）
+    top = sorted([it for it in full if it[0] < head_cut], key=lambda t: t[0])
+    bottom = sorted([it for it in full if it[0] >= head_cut], key=lambda t: t[0])
+
+    return (
+        top
+        + sorted(left, key=lambda t: (t[0] // 8, t[1]))
+        + sorted(right, key=lambda t: (t[0] // 8, t[1]))
+        + bottom
+    )
+
+
 def _parse_pdf_page(page, doc, ocr_image) -> str:
-    """单页：类型分流 + 版面还原 + 图片 OCR（按坐标统一排序）。"""
+    """单页：类型分流 + 版面还原 + 图片 OCR（按栏还原阅读顺序）。"""
     raw_text = page.get_text("text") or ""
     if len(raw_text.strip()) < settings.pdf_ocr_min_chars:
         # 扫描页：整页渲染 OCR
@@ -79,13 +136,18 @@ def _parse_pdf_page(page, doc, ocr_image) -> str:
     data = page.get_text("dict")
     median_size = _median_font_size(data)
     page_h = page.rect.height
+    page_w = page.rect.width
     top_cut = page_h * settings.pdf_margin_top
     bottom_cut = page_h * settings.pdf_margin_bottom
 
-    items: list[tuple[float, str]] = []  # (y 坐标, 文本) 统一排序还原阅读顺序
+    # (y0, x0, x1, 文本)：保留 x 范围，供双栏判定使用
+    items: list[tuple[float, float, float, str]] = []
     for block in data.get("blocks", []):
         if block.get("type") != 0:
             continue
+        block_box = block.get("bbox", (0, 0, 0, 0))
+        block_lines: list[str] = []
+        block_y = block_box[1]
         for line in block.get("lines", []):
             bbox = line.get("bbox", (0, 0, 0, 0))
             y0, y1 = bbox[1], bbox[3]
@@ -99,9 +161,14 @@ def _parse_pdf_page(page, doc, ocr_image) -> str:
             )
             # 标题检测：字号 ≥ 中位数 1.35 倍且行短 → markdown 标题（衔接 chunker 章节划分）
             if max_size >= median_size * 1.35 and len(line_text.strip()) <= 40:
-                items.append((y0, f"# {line_text.strip()}"))
+                block_lines.append(f"# {line_text.strip()}")
             else:
-                items.append((y0, line_text))
+                block_lines.append(line_text)
+        if block_lines:
+            # 按 block 聚合，保住段落完整性（逐行重排会把段落拆碎）
+            items.append(
+                (block_y, block_box[0], block_box[2], "\n".join(block_lines))
+            )
 
     # 页内图片：OCR 文字 + VLM 描述（按位置排序插入）
     for img_info in page.get_images(full=True):
@@ -124,12 +191,12 @@ def _parse_pdf_page(page, doc, ocr_image) -> str:
                 if desc.strip():
                     parts_img.append(f"[图描述] {desc.strip()}")
             if parts_img:
-                items.append((y_pos, "\n".join(parts_img)))
+                items.append((y_pos, page.rect.x0, page_w, "\n".join(parts_img)))
         except Exception:
             continue
 
-    items.sort(key=lambda t: (t[0] // 8, t[1]))
-    return _clean("\n\n".join(text for _, text in items))
+    ordered = _order_by_columns(items, page_w, page_h)
+    return _clean("\n\n".join(t[3] for t in ordered))
 
 
 # ---------------- DOCX / TXT ----------------

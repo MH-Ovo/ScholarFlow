@@ -5,20 +5,22 @@ ROUTER_PROMPT = """你是一名本地知识库助手的检索规划器（Planner
 用户输入：{query}
 
 输出 JSON（不要输出其他内容）：
-{{"type": "chat" 或 "knowledge", "kb": true/false, "paper": true/false, "web": true/false, "sub_queries": ["2 个从不同措辞检索同一问题的查询变体"]}}
+{{"type": "chat" 或 "knowledge", "kb": true/false, "paper": true/false, "web": true/false, "cnki": true/false, "sub_queries": ["2 个从不同措辞检索同一问题的查询变体"]}}
 
 判断规则：
-- "chat"：寒暄、闲聊、问候、感谢、告别、自我介绍类（如"你好""谢谢""你是谁"），不需要检索，三个来源全 false
+- "chat"：寒暄、闲聊、问候、感谢、告别、自我介绍类（如"你好""谢谢""你是谁"），不需要检索，四个来源全 false
 - "knowledge"：需要检索资料回答的知识问题，逐源规划：
   - "kb"：本地知识库。默认 true（内部制度、流程、项目细节、文档内容、代码说明，或不确定该问哪时）
-  - "paper"：用户明确提到 论文/学术/arXiv/研究/学术进展 时 true
+  - "paper"：用户明确提到 论文/学术/arXiv/研究/学术进展 时 true（面向英文/arXiv 预印本）
+  - "cnki"：用户提到 知网/中文文献/中文期刊/国内研究/中国学者/中文学术现状 时 true。cnki 检索较慢，仅在确有中文文献需求时开启
   - "web"：用户明确提到 网页/网上/最新/新闻/官网/业界动态 时 true；纯公网时事且与本地资料无关时 kb 可为 false
-  - 对比本地资料与外部信息 → 三个全 true
+  - 对比本地资料与外部信息 → 全部 true
 示例：
-"Python是什么" → {{"type":"knowledge","kb":true,"paper":false,"web":false}}
-"OpenAI最新发布了什么模型" → {{"type":"knowledge","kb":false,"paper":false,"web":true}}
-"Transformer 最新研究" → {{"type":"knowledge","kb":true,"paper":true,"web":true}}
-"对比我们的方案和学术界的最新做法" → {{"type":"knowledge","kb":true,"paper":true,"web":true,"sub_queries":["企业内部方案与学术界做法对比","相关技术最新研究进展"]}}
+"Python是什么" → {{"type":"knowledge","kb":true,"paper":false,"web":false,"cnki":false}}
+"OpenAI最新发布了什么模型" → {{"type":"knowledge","kb":false,"paper":false,"web":true,"cnki":false}}
+"Transformer 最新研究" → {{"type":"knowledge","kb":true,"paper":true,"web":true,"cnki":false}}
+"国内关于混合检索有哪些研究" → {{"type":"knowledge","kb":true,"paper":false,"web":false,"cnki":true}}
+"对比我们的方案和学术界的最新做法" → {{"type":"knowledge","kb":true,"paper":true,"web":true,"cnki":true,"sub_queries":["企业内部方案与学术界做法对比","相关技术最新研究进展"]}}
 （chat 与简单事实题 sub_queries 可以为空数组）
 """
 
@@ -35,12 +37,15 @@ QUERY_PROCESS_PROMPT = """你是一名检索优化助手。用户的问题：
   "rewritten_query": "改写后的规范检索问题（补全专业术语、去除口语化表述）",
   "keywords": ["5-8 个与问题强相关的检索关键词/同义词/子主题，中文为主"],
   "sub_queries": ["2-3 个从不同角度/不同措辞检索同一问题的查询变体"],
-  "hyde": "假设性答案（60-120 字，凭常识直接回答该问题；不必真实正确，目的是让检索词贴近文档的表述方式）"
+  "hyde": "假设性答案（60-120 字，凭常识直接回答该问题；不必真实正确，目的是让检索词贴近文档的表述方式）",
+  "en_query": "若上述问题为中文，给出用于检索英文学术文献的英文重述；若问题已是英文，输出空字符串"
 }}
 要求：
 - keywords 用于知识库关键词检索，尽量覆盖同一概念的不同说法。
 - sub_queries 用于多路语义检索：换一种问法/术语体系（如"api_client 初始值"→"api_client = 的赋值语句"），每条都要能独立作为检索问题。
 - hyde 是 HyDE 检索变体：写成"看起来像文档里会出现的答案段落"，而不是问题本身。
+- en_query 用于跨语言检索：知识库里中英文论文混排时，中文问题直接做向量检索会偏向中文切片，
+  英文原文反而排不到前面。保留专业术语的英文原词（如 hybrid retrieval、knowledge graph）。
 """
 
 REPORT_PROMPT = """你是一名本地知识库问答助手。请直接回答用户问题「{query}」。
@@ -94,6 +99,19 @@ VERIFY_PROMPT = """你是一名事实核查员。用户问题：{query}
   "pass": true/false
 }}
 要求：faithfulness 低于 0.7 时 pass=false；unsupported_claims 列出无法从片段佐证的论断。
+"""
+
+CNKI_KEYWORDS_PROMPT = """从下面的用户问题中提取 2-4 个用于中文文献数据库（知网）检索的核心学术术语。
+
+用户问题：{query}
+
+要求：
+- 只保留学术术语（如"混合检索""检索增强生成""向量数据库""知识图谱"）
+- 去掉"国内""有哪些""研究""应用""方法""现状"等泛词与疑问词
+- 术语用空格分隔，不要解释
+
+输出 JSON（不要输出其他内容）：
+{{"keywords": ["术语1", "术语2"]}}
 """
 
 CHART_REPORT_PROMPT = """你是一名文档图表分析师。用户问题：{query}

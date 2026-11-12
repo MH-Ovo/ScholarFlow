@@ -5,6 +5,7 @@ import {
   FileBarChart,
   Globe,
   GraduationCap,
+  Library,
   Loader2,
   Network,
   PauseCircle,
@@ -19,6 +20,7 @@ const STEP_ICONS: Record<string, LucideIcon> = {
   kb_search: Database,
   paper_search: GraduationCap,
   web_search: Globe,
+  cnki_search: Library,
   graph_build: Network,
   report_write: FileBarChart,
 };

@@ -1490,13 +1490,14 @@ async def report_writer_node(state: ResearchState) -> dict:
         # 否则报告流完到 completed 之间界面完全静默，用户以为卡死
         if llm.mode != "mock" and sources and not table_answer:
             EVENT_BUS.emit(task_id, "verifying", {"answer_chars": len(report)})
-            # 核查瘦身：按相关性取前 8 源，snippet+parent 截断
+            # 核查只查报告实际引用的来源（最多 8 条），snippet+parent 截断
             # （原全量 12×2000tok parent ≈24K token，核查 15-20s；瘦身后 3-5s）
-            verify_sources = sorted(sources, key=lambda x: x.get("relevance", 0.0), reverse=True)[:8]
+            cited = [x for x in sources if x["ref_no"] in used_refs] or sources
+            verify_sources = sorted(cited, key=lambda x: x.get("relevance", 0.0), reverse=True)[:8]
             parts_ctx: list[str] = []
             for x in verify_sources:
-                head = (x.get("snippet") or "")[:300]
-                tail = ((x.get("meta") or {}).get("parent_text") or "")[:500]
+                head = (x.get("snippet") or "")[:600]
+                tail = ((x.get("meta") or {}).get("parent_text") or "")[:1500]
                 parts_ctx.append(f"[{x['ref_no']}] {x['title']}\n{head}\n{tail}")
             verify_ctx = "\n\n".join(parts_ctx)
             verify_res = await llm.extract_json_result(
@@ -1546,16 +1547,12 @@ async def report_writer_node(state: ResearchState) -> dict:
                     parts2.append(piece)
                     EVENT_BUS.emit(task_id, "report_token", {"delta": piece})
                 report2 = "".join(parts2).strip()
-                if len(report2) < 20:
-                    report2 = mock_text
-                    revise_meta["degraded"] = True
-                    revise_meta["reason"] = revise_meta.get("reason") or "修订版为空，已用片段摘录"
-                if revise_meta.get("degraded"):
-                    report_meta["degraded"] = True
-                    report_meta["reason"] = revise_meta.get("reason") or "报告修订降级"
+                if len(report2) < 20 or revise_meta.get("degraded"):
+                    # 修订失败保留初稿：初稿可用时不要换成原始摘录，也不把整篇报告标记为降级
+                    report2 = report
                     EVENT_BUS.emit(
                         task_id, "degraded",
-                        {"stage": "report", "reason": report_meta["reason"]},
+                        {"stage": "revise", "reason": revise_meta.get("reason") or "修订未完成，已保留初稿"},
                     )
                 report = report2
                 report, used_refs = _verify_citations(report, sources)

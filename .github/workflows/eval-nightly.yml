@@ -51,4 +51,4 @@ jobs:
             --sequential --sleep 2
 
       - name: Gate
-        run: python eval/scripts/ragas_gate.py --input "$(ls -t eval/results/ragas_nightly_[0-9]*.json | head -1)" --min-context 0.82 --min-faithfulness 0.82
+        run: python eval/scripts/ragas_gate.py --input "$(ls -t eval/results/ragas_nightly_[0-9]*.json | head -1)" --min-context 0.82 --min-faithfulness 0.88

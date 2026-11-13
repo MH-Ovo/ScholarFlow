@@ -249,7 +249,8 @@ export const useResearchStore = create<ResearchState>((set, get) => ({
         d.report?.degraded_reason ?? statsAny.report_degraded_reason ?? "",
       ),
       selectedRefNo: null,
-      messages: d.messages,
+      // 气泡只渲染用户提问；agent 消息仅用于后端多轮历史
+      messages: d.messages.filter((m) => m.role === "user"),
       reports: d.reports ?? [],
       snapshotLocked: false,
       draftDone: false,
@@ -494,7 +495,9 @@ export const useResearchStore = create<ResearchState>((set, get) => ({
       reportDegraded: Boolean(d.report?.degraded ?? state.reportDegraded),
       reportDegradedReason: String(d.report?.degraded_reason ?? state.reportDegradedReason),
       sources: d.sources.length ? d.sources : state.sources,
-      messages: d.messages.length ? d.messages : state.messages,
+      messages: d.messages.length
+        ? d.messages.filter((m) => m.role === "user")
+        : state.messages,
       reports: d.reports?.length ? d.reports : state.reports,
     });
   },

@@ -3,6 +3,7 @@ import type {
   KbChunkDetail,
   KbDetail,
   KbDocument,
+  KbDocumentPage,
   KbStats,
   SourceFulltext,
   SourceStatItem,
@@ -209,12 +210,30 @@ export const api = {
     }>;
   },
 
-  listDocuments: () => request<KbDocument[]>("/documents"),
+  listDocuments: (params?: {
+    q?: string;
+    status?: string;
+    doc_type?: string;
+    page?: number;
+    page_size?: number;
+  }) => {
+    const qs = new URLSearchParams();
+    if (params?.q) qs.set("q", params.q);
+    if (params?.status) qs.set("status", params.status);
+    if (params?.doc_type) qs.set("doc_type", params.doc_type);
+    if (params?.page) qs.set("page", String(params.page));
+    if (params?.page_size) qs.set("page_size", String(params.page_size));
+    const suffix = qs.toString() ? `?${qs.toString()}` : "";
+    return request<KbDocumentPage>(`/documents${suffix}`);
+  },
 
   getDocument: (id: number) => request<KbDetail>(`/documents/${id}`),
 
   retryDocument: (id: number) =>
     request<{ ok: boolean }>(`/documents/${id}/retry`, { method: "POST" }),
+
+  reindexDocument: (id: number) =>
+    request<{ ok: boolean }>(`/documents/${id}/reindex`, { method: "POST" }),
 
   deleteDocument: (id: number) =>
     request<{ ok: boolean }>(`/documents/${id}`, { method: "DELETE" }),

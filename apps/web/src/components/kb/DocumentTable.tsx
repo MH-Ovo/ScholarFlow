@@ -1,4 +1,4 @@
-import { Eye, RotateCcw, Trash2 } from "lucide-react";
+import { Eye, RefreshCw, RotateCcw, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { relativeTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -12,12 +12,14 @@ export function DocumentTable({
   onPreview,
   onDelete,
   onRetry,
+  onReindex,
 }: {
   documents: KbDocument[];
   highlightedId?: number | null;
   onPreview: (doc: KbDocument) => void;
   onDelete: (doc: KbDocument) => void;
   onRetry: (doc: KbDocument) => void;
+  onReindex: (doc: KbDocument) => void;
 }) {
   return (
     <div className="overflow-x-auto rounded-xl border bg-card">
@@ -59,7 +61,21 @@ export function DocumentTable({
               <td className="px-3 py-2.5">
                 <DocumentStatusBadge status={d.status} error={d.error_msg} />
               </td>
-              <td className="px-3 py-2.5 text-right tabular-nums">{d.chunk_count}</td>
+              <td className="px-3 py-2.5 text-right tabular-nums">
+                {d.is_partial ? (
+                  <span
+                    className="inline-flex items-center gap-1 text-amber-600"
+                    title={`仅索引前 ${d.chunk_count}/${d.expected_chunks} 片`}
+                  >
+                    {d.chunk_count}/{d.expected_chunks}
+                    <span className="rounded bg-amber-100 px-1 py-0.5 text-[10px] font-medium">
+                      部分
+                    </span>
+                  </span>
+                ) : (
+                  d.chunk_count
+                )}
+              </td>
               <td className="px-3 py-2.5 text-xs text-muted-foreground">
                 {relativeTime(d.created_at)}
               </td>
@@ -83,6 +99,17 @@ export function DocumentTable({
                       onClick={() => onRetry(d)}
                     >
                       <RotateCcw className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
+                  {d.status === "indexed" && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 text-muted-foreground"
+                      title="重新索引（重建切片与向量）"
+                      onClick={() => onReindex(d)}
+                    >
+                      <RefreshCw className="h-3.5 w-3.5" />
                     </Button>
                   )}
                   <Button

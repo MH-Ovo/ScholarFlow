@@ -7,6 +7,12 @@ import { useCountUp } from "@/hooks/use-count-up";
 import { formatNumber } from "@/lib/format";
 import type { AnalyticsSummary } from "@/types";
 
+function formatCompact(n: number) {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
+  return String(n);
+}
+
 function BigStat({
   value,
   label,
@@ -55,6 +61,23 @@ export function ResearchStatsPanel({ summary }: { summary: AnalyticsSummary | un
           <BigStat value={summary?.knowledge_sources ?? 0} label="Sources" />
           <BigStat value={summary?.documents_processed ?? 0} label="Docs Hit" />
           <BigStat value={summary?.accuracy_rate ?? 0} label="Accuracy" suffix="%" />
+        </div>
+        <div className="mt-1 grid grid-cols-2 gap-x-3 gap-y-1 border-t pt-2.5 text-[11px] text-muted-foreground">
+          <span title="已完成任务的平均耗时">
+            平均耗时 <b className="text-foreground">{summary?.latency?.avg_sec ?? 0}s</b>
+          </span>
+          <span title="已完成任务的 P95 耗时">
+            P95 <b className="text-foreground">{summary?.latency?.p95_sec ?? 0}s</b>
+          </span>
+          <span title="累计 LLM token（输入/输出）">
+            Tokens{" "}
+            <b className="text-foreground">
+              {formatCompact(summary?.llm?.tokens_in ?? 0)}/{formatCompact(summary?.llm?.tokens_out ?? 0)}
+            </b>
+          </span>
+          <span title="按配置单价估算，未配置单价时为 0">
+            成本 <b className="text-foreground">${(summary?.llm?.cost_usd ?? 0).toFixed(2)}</b>
+          </span>
         </div>
       </CardContent>
     </Card>

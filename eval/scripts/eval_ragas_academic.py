@@ -267,10 +267,27 @@ def score(samples: list[dict], metrics: list, judge_model: str) -> dict:
         rows.append(item)
 
     agg = {}
+    ci = {}
     for m in metrics:
         vals = [r[m.name] for r in rows if isinstance(r.get(m.name), (int, float))]
         agg[m.name] = _mean(vals)
-    return {"aggregate": agg, "items": rows}
+        ci[m.name] = _bootstrap_ci(vals)
+    return {"aggregate": agg, "ci95": ci, "items": rows}
+
+
+def _bootstrap_ci(values: list[float], n: int = 1000) -> list[float] | None:
+    """均值的 95% bootstrap 置信区间（固定种子，结果可复现）。"""
+    if len(values) < 3:
+        return None
+    import random
+
+    rng = random.Random(42)
+    means = []
+    size = len(values)
+    for _ in range(n):
+        means.append(sum(rng.choice(values) for _ in range(size)) / size)
+    means.sort()
+    return [round(means[int(0.025 * n)], 4), round(means[max(0, int(0.975 * n) - 1)], 4)]
 
 
 def score_sequential(samples: list[dict], metrics: list, judge_model: str, delay: float = 2.0) -> dict:
@@ -365,10 +382,12 @@ def score_sequential(samples: list[dict], metrics: list, judge_model: str, delay
             time.sleep(max(0.0, delay))
 
     agg = {}
+    ci = {}
     for m in metrics:
         vals = [r[m.name] for r in rows if isinstance(r.get(m.name), (int, float))]
         agg[m.name] = _mean(vals)
-    return {"aggregate": agg, "items": rows}
+        ci[m.name] = _bootstrap_ci(vals)
+    return {"aggregate": agg, "ci95": ci, "items": rows}
 
 
 def merge_generation(old_path: str, new_gen: dict) -> dict:
@@ -443,6 +462,7 @@ def render_md(tag: str, dataset: str, retr: dict | None, gen: dict | None) -> st
             "|---|---|---|",
             f"| context_recall | {a.get('context_recall')} | {len(gen['items'])} |",
             f"| faithfulness | {a.get('faithfulness')} | {len(gen['items'])} |",
+            f"| 95% CI（faithfulness） | {(gen.get('ci95') or {}).get('faithfulness')} | bootstrap 1000 |",
             "",
             "| id | context_recall | faithfulness | 报告字数 | 来源 | 耗时 |",
             "|---|---|---|---|---|---|",
@@ -462,6 +482,7 @@ async def main() -> int:
     parser.add_argument("--tag", default="baseline")
     parser.add_argument("--limit", type=int, default=0)
     parser.add_argument("--ids", default="", help="逗号分隔的题目 id 子集")
+    parser.add_argument("--judge2", default="", help="第二裁判模型（双裁判平均，留空=单裁判）")
     parser.add_argument("--contexts", type=int, default=12, help="检索上下文条数")
     parser.add_argument("--parent-chars", type=int, default=4000, help="parent 文本截断长度")
     parser.add_argument("--include-child", action="store_true", help="上下文中额外拼 child 文本")
@@ -576,6 +597,40 @@ async def main() -> int:
                 gen["_gen_meta"] = scorable
                 print(f"[ragas] generation metrics={gen['aggregate']}", flush=True)
 
+    judge2 = args.judge2 or getattr(s, "eval_judge_model_2", "") or ""
+    if gen and judge2:
+        meta_samples = gen.get("_gen_meta") or []
+        metrics2 = [faithfulness] if args.faithfulness_only else [context_recall, faithfulness]
+        if args.sequential:
+            gen2 = score_sequential(meta_samples, metrics2, judge2, delay=args.sleep)
+        else:
+            gen2 = score(meta_samples, metrics2, judge2)
+        by2 = {x["id"]: x for x in gen2["items"]}
+        diffs = []
+        for x in gen["items"]:
+            y = by2.get(x.get("id"))
+            if not y:
+                continue
+            a, b = x.get("faithfulness"), y.get("faithfulness")
+            if isinstance(a, (int, float)) and isinstance(b, (int, float)):
+                diffs.append(abs(a - b))
+        gen["judge2"] = {
+            "model": judge2,
+            "aggregate": gen2["aggregate"],
+            "ci95": gen2.get("ci95"),
+            "items": gen2["items"],
+            "faithfulness_mad": round(sum(diffs) / len(diffs), 4) if diffs else None,
+        }
+        for k, v in gen["aggregate"].items():
+            v2 = gen2["aggregate"].get(k)
+            if isinstance(v, (int, float)) and isinstance(v2, (int, float)):
+                gen["aggregate"][k] = round((v + v2) / 2, 4)
+        print(
+            f"[ragas] dual judge={judge2} agg2={gen2['aggregate']} "
+            f"avg={gen['aggregate']} mad={gen['judge2']['faithfulness_mad']}",
+            flush=True,
+        )
+
     ts = time.strftime("%Y%m%d_%H%M")
     out_dir = EVAL_DIR / "results"
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -585,6 +640,7 @@ async def main() -> int:
             "dataset": dataset.name,
             "items": len(items),
             "judge_model": judge_model,
+            "judge_model_2": judge2 or None,
             "ts": time.strftime("%Y-%m-%d %H:%M"),
         },
         "retrieval": retr,

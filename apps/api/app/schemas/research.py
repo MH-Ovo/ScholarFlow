@@ -65,6 +65,12 @@ class TaskSummaryOut(BaseModel):
     created_at: str
 
 
+class ClaimOut(BaseModel):
+    claim_text: str
+    ref_no: int
+    supported: bool | None = None
+
+
 class TaskDetailOut(BaseModel):
     id: str
     title: str
@@ -77,3 +83,4 @@ class TaskDetailOut(BaseModel):
     graph: dict
     stats: dict
     messages: list[dict]
+    claims: list[ClaimOut] = []

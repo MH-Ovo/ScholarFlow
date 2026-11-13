@@ -6,6 +6,7 @@ import { RotateCcw, Square } from "lucide-react";
 import { GraphMiniPanel } from "@/components/graph/GraphMiniPanel";
 import { RightPanel } from "@/components/layout/RightPanel";
 import { AgentHeader } from "@/components/research/AgentHeader";
+import { ClaimPanel } from "@/components/research/ClaimPanel";
 import { AgentStepCards } from "@/components/research/AgentStepCards";
 import { Disclaimer } from "@/components/research/Disclaimer";
 import { ProcessTimeline } from "@/components/research/ProcessTimeline";
@@ -209,6 +210,11 @@ export default function ResearchPage() {
 
                       {/* 当前轮报告（骨架屏/流式打字机/完成回退）自治渲染 + 自动滚动 */}
                       <ReportStreamArea />
+                      <ClaimPanel
+                        taskId={taskId ?? null}
+                        enabled={phase === "done"}
+                        refreshKey={reports.length}
+                      />
                     </div>
                   ) : (
                     report && (

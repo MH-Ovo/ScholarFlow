@@ -21,6 +21,7 @@ import tiktoken
 
 TRACE_DIR = Path(__file__).resolve().parents[4] / "eval" / "results" / "traces"
 _current_task: ContextVar[str | None] = ContextVar("trace_task_id", default=None)
+_usage: ContextVar[dict | None] = ContextVar("trace_usage", default=None)
 _lock = threading.Lock()
 _encoder = None
 
@@ -35,6 +36,28 @@ def reset_task(token) -> None:
 
 def current_task() -> str | None:
     return _current_task.get()
+
+
+def start_usage() -> dict:
+    """为当前任务开一份 LLM 用量账本（并发任务各自持有上下文副本）。"""
+    usage = {"calls": 0, "input_tokens": 0, "output_tokens": 0, "duration_ms": 0.0}
+    _usage.set(usage)
+    return usage
+
+
+def usage_snapshot() -> dict:
+    usage = _usage.get()
+    return dict(usage) if usage else {}
+
+
+def _add_usage(input_tokens: int, output_tokens: int, duration_ms: float) -> None:
+    usage = _usage.get()
+    if usage is None:
+        return
+    usage["calls"] += 1
+    usage["input_tokens"] += int(input_tokens)
+    usage["output_tokens"] += int(output_tokens)
+    usage["duration_ms"] += float(duration_ms)
 
 
 def _tokens(text: str) -> int:
@@ -97,6 +120,7 @@ def record_llm(
     usage = usage or {}
     input_tokens = int(usage.get("input_tokens") or _tokens(prompt))
     output_tokens = int(usage.get("output_tokens") or _tokens(output))
+    _add_usage(input_tokens, output_tokens, duration_ms)
     record(
         "llm",
         kind=kind,

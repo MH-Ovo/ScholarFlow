@@ -118,6 +118,10 @@ class Settings(BaseSettings):
     research_time_budget_sec: float = 60.0
     # 重排：RRF 融合后 bge-reranker-v2-m3 模型精排（false 仅 RRF 排名）
     rerank_enabled: bool = True
+    # 检索候选池：先取更大的 top_k 交给精排，最终仍只保留 12 条来源。
+    # 扩大池子对长尾问题更友好，代价是 rerank 多打分几十条（CPU ~0.2s/条）。
+    kb_candidate_k: int = 40
+    kb_candidate_k_escalated: int = 60
 
     # 服务
     api_host: str = "0.0.0.0"
@@ -153,6 +157,10 @@ class Settings(BaseSettings):
     # 评估裁判 LLM（仅 eval_run.py 的 ragas 评分使用，与被测系统解耦）。
     # 留空回退 DeepSeek 主配置；可指向任意 OpenAI 兼容端点（如 Ollama 本地模型）省钱。
     eval_judge_model: str = ""
+    eval_judge_model_2: str = ""      # 双裁判：第二个模型（留空=单裁判）
+    # 成本看板：按每千 token 单价估算（留 0 时只统计 token，不折算金额）
+    llm_price_in_per_1k: float = 0.0
+    llm_price_out_per_1k: float = 0.0
     eval_judge_base_url: str = ""
     eval_judge_api_key: str = ""
 

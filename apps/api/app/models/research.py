@@ -89,6 +89,8 @@ class Citation(Base):
     ref_no: Mapped[int] = mapped_column(sa.Integer)
     source_id: Mapped[int] = mapped_column(sa.Integer, sa.ForeignKey("sources.id"))
     claim_text: Mapped[str] = mapped_column(sa.Text, default="")
+    # 逐句核查结果：True=有依据 / False=核查判为无依据 / None=未核查（降级或旧数据）
+    supported: Mapped[bool | None] = mapped_column(sa.Boolean, nullable=True)
 
 
 class Report(Base):
@@ -135,6 +137,9 @@ class Document(Base):
     content_hash: Mapped[str] = mapped_column(sa.String(64), default="", index=True)
     error_msg: Mapped[str] = mapped_column(sa.String(300), default="")
     chunk_count: Mapped[int] = mapped_column(sa.Integer, default=0)
+    # 解析后实际切片数（截断前）；is_partial=True 表示只索引了前 N 片
+    expected_chunks: Mapped[int] = mapped_column(sa.Integer, default=0)
+    is_partial: Mapped[bool] = mapped_column(sa.Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), default=utcnow)
 
 

@@ -12,7 +12,7 @@ from app.core.auth import Principal, require_principal
 from app.core.config import get_settings
 from app.core.timeutil import fmt_dt
 from app.db.session import SessionLocal
-from app.models.research import Document, Message, Report, ResearchStep, ResearchTask, Source
+from app.models.research import Citation, Document, Message, Report, ResearchStep, ResearchTask, Source
 from app.schemas.research import (
     CreateResearchRequest,
     CreateResearchResponse,
@@ -109,6 +109,11 @@ async def get_research(task_id: str, principal: Principal = Depends(require_prin
                 select(Message).where(Message.task_id == task_id).order_by(Message.created_at)
             )
         ).scalars().all()
+        claims = (
+            await db.execute(
+                select(Citation).where(Citation.report_id == report.id).order_by(Citation.id)
+            )
+        ).scalars().all() if report is not None else []
 
     return TaskDetailOut(
         id=task.id,
@@ -142,6 +147,11 @@ async def get_research(task_id: str, principal: Principal = Depends(require_prin
         graph=task.graph_json or {"nodes": [], "edges": []},
         stats=task.stats_json or {},
         messages=[{"role": m.role, "content": m.content} for m in messages],
+        claims=[
+            {"claim_text": c.claim_text, "ref_no": c.ref_no, "supported": c.supported}
+            for c in claims
+            if c.claim_text
+        ],
     )
 
 

@@ -47,6 +47,11 @@ def _ensure_legacy_columns(conn) -> None:
         "documents": [
             ("tenant_id", "VARCHAR(64) NOT NULL DEFAULT 'default'"),
             ("content_hash", "VARCHAR(64) NOT NULL DEFAULT ''"),
+            ("expected_chunks", "INTEGER NOT NULL DEFAULT 0"),
+            ("is_partial", f"BOOLEAN NOT NULL DEFAULT {bool_false}"),
+        ],
+        "citations": [
+            ("supported", "BOOLEAN"),
         ],
         "reports": [
             ("tenant_id", "VARCHAR(64) NOT NULL DEFAULT 'default'"),

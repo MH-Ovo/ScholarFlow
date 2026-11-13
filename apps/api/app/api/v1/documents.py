@@ -2,8 +2,8 @@
 
 所有查询按 principal.tenant_id 隔离；上传走流式落盘 + magic 校验 + 租户配额。
 """
-from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile
-from sqlalchemy import delete, func, select
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, UploadFile
+from sqlalchemy import delete, func, or_, select
 
 from app.core.auth import Principal, require_principal
 from app.core.config import get_settings
@@ -15,6 +15,7 @@ from app.schemas.documents import (
     ChunkOut,
     DocumentDetailOut,
     DocumentOut,
+    DocumentPageOut,
     KbStats,
     UploadResponse,
 )
@@ -120,29 +121,55 @@ async def upload_documents(
     return UploadResponse(items=items)
 
 
-@documents_router.get("", response_model=list[DocumentOut])
-async def list_documents(principal: Principal = Depends(require_principal)):
+def _doc_out(d: Document) -> DocumentOut:
+    return DocumentOut(
+        id=d.id,
+        name=d.name,
+        doc_type=d.doc_type,
+        size_bytes=d.size_bytes,
+        status=d.status,
+        error_msg=d.error_msg,
+        chunk_count=d.chunk_count,
+        expected_chunks=d.expected_chunks,
+        is_partial=d.is_partial,
+        created_at=fmt_dt(d.created_at),
+    )
+
+
+@documents_router.get("", response_model=DocumentPageOut)
+async def list_documents(
+    q: str = Query("", max_length=100, description="按文件名搜索"),
+    status: str = Query("", description="pending/parsing/embedding/indexed/failed"),
+    doc_type: str = Query("", description="pdf/docx/md/txt"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    principal: Principal = Depends(require_principal),
+):
     async with SessionLocal() as db:
+        stmt = select(Document).where(Document.tenant_id == principal.tenant_id)
+        if q.strip():
+            like = f"%{q.strip()}%"
+            stmt = stmt.where(or_(Document.name.ilike(like), Document.error_msg.ilike(like)))
+        if status.strip():
+            stmt = stmt.where(Document.status == status.strip())
+        if doc_type.strip():
+            stmt = stmt.where(Document.doc_type == doc_type.strip())
+        total = (
+            await db.execute(select(func.count()).select_from(stmt.subquery()))
+        ).scalar() or 0
         rows = (
             await db.execute(
-                select(Document)
-                .where(Document.tenant_id == principal.tenant_id)
-                .order_by(Document.created_at.desc())
+                stmt.order_by(Document.created_at.desc())
+                .offset((page - 1) * page_size)
+                .limit(page_size)
             )
         ).scalars().all()
-    return [
-        DocumentOut(
-            id=d.id,
-            name=d.name,
-            doc_type=d.doc_type,
-            size_bytes=d.size_bytes,
-            status=d.status,
-            error_msg=d.error_msg,
-            chunk_count=d.chunk_count,
-            created_at=fmt_dt(d.created_at),
-        )
-        for d in rows
-    ]
+    return DocumentPageOut(
+        items=[_doc_out(d) for d in rows],
+        total=int(total),
+        page=page,
+        page_size=page_size,
+    )
 
 
 @documents_router.get("/{doc_id}", response_model=DocumentDetailOut)
@@ -167,6 +194,8 @@ async def get_document(doc_id: int, principal: Principal = Depends(require_princ
         status=doc.status,
         error_msg=doc.error_msg,
         chunk_count=doc.chunk_count,
+        expected_chunks=doc.expected_chunks,
+        is_partial=doc.is_partial,
         chunks=[ChunkOut(id=c.id, chunk_index=c.chunk_index, text=c.text) for c in chunks],
     )
 
@@ -187,6 +216,36 @@ async def retry_document(
         doc.status = "pending"
         doc.error_msg = ""
         doc.chunk_count = 0
+        doc.expected_chunks = 0
+        doc.is_partial = False
+        await db.commit()
+    try:
+        await get_vector_store().delete_by_document(doc_id)
+    except Exception:
+        pass
+    background_tasks.add_task(ingest_document, doc_id)
+    return {"ok": True}
+
+
+@documents_router.post("/{doc_id}/reindex")
+async def reindex_document(
+    doc_id: int,
+    background_tasks: BackgroundTasks,
+    principal: Principal = Depends(require_principal),
+):
+    """原地重建索引：任意非处理中状态可用，用于修复截断/旧解析器产物。"""
+    async with SessionLocal() as db:
+        doc = await db.get(Document, doc_id)
+        if doc is None or doc.tenant_id != principal.tenant_id:
+            raise HTTPException(status_code=404, detail="document not found")
+        if doc.status in ("parsing", "embedding"):
+            raise HTTPException(status_code=409, detail="document is busy")
+        await db.execute(delete(DocumentChunk).where(DocumentChunk.document_id == doc_id))
+        doc.status = "pending"
+        doc.error_msg = ""
+        doc.chunk_count = 0
+        doc.expected_chunks = 0
+        doc.is_partial = False
         await db.commit()
     try:
         await get_vector_store().delete_by_document(doc_id)

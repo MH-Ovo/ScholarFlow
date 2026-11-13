@@ -63,6 +63,7 @@ def _log(msg: str) -> None:
 from app.models.research import (
     STEP_DEFS,
     Citation,
+    Message,
     Document,
     DocumentChunk,
     Report,
@@ -183,6 +184,23 @@ async def fanout_external_node(state: ResearchState) -> dict:
     }
 
 
+def _history_block(history: list[dict] | None, limit: int = 6, chars: int = 800) -> str:
+    """把多轮历史压成提示词前缀：只用于理解指代与追问，不作为事实依据。"""
+    if not history:
+        return ""
+    lines: list[str] = []
+    for m in history[-limit:]:
+        # 历史里的 [n] 编号与当前轮来源不对应，去掉避免误导引用
+        content = re.sub(r"\[\d+\]", "", str(m.get("content") or "")).strip().replace(chr(10), " ")
+        if not content:
+            continue
+        role = "用户" if m.get("role") == "user" else "助手"
+        lines.append(f"{role}：{content[:chars]}")
+    if not lines:
+        return ""
+    return "【对话历史】（仅用于理解指代与追问，不作为事实依据）" + chr(10) + chr(10).join(lines) + chr(10) + chr(10)
+
+
 async def router_node(state: ResearchState) -> dict:
     """检索规划器（Planner）：chat 直接回复；knowledge 逐源规划 kb/paper/web。
 
@@ -193,7 +211,8 @@ async def router_node(state: ResearchState) -> dict:
     query = state.get("original_query") or state["query"]
     llm = get_llm()
     routed = await llm.extract_json_result(
-        ROUTER_PROMPT.format(query=query), mock_data.mock_route(query)
+        _history_block(state.get("history")) + ROUTER_PROMPT.format(query=query),
+        mock_data.mock_route(query),
     )
     payload = routed.data if isinstance(routed.data, dict) else {}
     metrics = state.get("metrics") or {}
@@ -675,7 +694,7 @@ async def kb_retriever_node(state: ResearchState) -> dict:
 
     # 反思重查最终轮（escalation）：加大检索量 + 放宽阈值
     esc = bool(state.get("escalation"))
-    top_k = 30 if esc else 20
+    top_k = settings.kb_candidate_k_escalated if esc else settings.kb_candidate_k
     min_score = (settings.kb_min_score - 0.05) if esc else None
 
     # 查询增强：Planner 合并调用已产出子查询变体则直接复用（省一次 LLM 调用，约 5-10s）；
@@ -690,7 +709,7 @@ async def kb_retriever_node(state: ResearchState) -> dict:
     if not sub_queries and settings.query_processing:
         llm = get_llm()
         processed_res = await llm.extract_json_result(
-            QUERY_PROCESS_PROMPT.format(query=query),
+            _history_block(state.get("history")) + QUERY_PROCESS_PROMPT.format(query=query),
             mock_data.mock_query_process(query),
         )
         processed = processed_res.data if isinstance(processed_res.data, dict) else {}
@@ -1372,6 +1391,41 @@ def _verify_citations(report: str, sources: list[dict]) -> tuple[str, list[int]]
     return cleaned, used
 
 
+_SENTENCE_RE = re.compile("[^。！？!?；;" + chr(10) + "]+[。！？!?；;]?")
+
+
+def _norm_claim(text: str) -> str:
+    return re.sub(r"\s+", "", text).strip("。！？!?；;：:、，,")
+
+
+def _extract_claims(report: str, max_claims: int = 60) -> list[tuple[str, list[int]]]:
+    """按句拆分报告，保留带 [n] 的句子与其引用编号（claim_text 不含标记）。"""
+    out: list[tuple[str, list[int]]] = []
+    for match in _SENTENCE_RE.finditer(report):
+        raw = match.group(0).strip()
+        refs = sorted({int(n) for n in re.findall(r"\[(\d+)\]", raw)})
+        if not refs:
+            continue
+        text = re.sub(r"\[\d+\]", "", raw).strip(" -" + chr(9))
+        if len(text) < 6:
+            continue
+        out.append((text[:500], refs))
+        if len(out) >= max_claims:
+            break
+    return out
+
+
+def _claim_supported(text: str, unsupported: list[str]) -> bool | None:
+    c = _norm_claim(text)
+    for item in unsupported:
+        u = _norm_claim(item)
+        if not u:
+            continue
+        if u in c or c in u or (len(u) >= 8 and u[:8] in c):
+            return False
+    return True
+
+
 async def report_writer_node(state: ResearchState) -> dict:
     task_id = state["task_id"]
     original_query = state.get("original_query") or state["query"]
@@ -1383,6 +1437,8 @@ async def report_writer_node(state: ResearchState) -> dict:
     llm = get_llm()
     lang = state.get("lang", "zh")
     report_meta: dict = {}
+    unsupported_claims: list[str] = []
+    claims_verified = False
 
     def _build_context_block(srcs: list[dict]) -> str:
         """上下文块：KB 来源优先用章节级 parent 文本（上下文完整），外部来源用 snippet。"""
@@ -1452,7 +1508,8 @@ async def report_writer_node(state: ResearchState) -> dict:
         is_chart_context = bool(sources) and chart_cnt / len(sources) >= 0.6
         prompt_template = CHART_REPORT_PROMPT if is_chart_context else REPORT_PROMPT
         prompt = (
-            prompt_template.format(
+            _history_block(state.get("history"))
+            + prompt_template.format(
                 query=original_query, context_block=context_block, count=len(sources)
             )
             + lang_note
@@ -1508,6 +1565,11 @@ async def report_writer_node(state: ResearchState) -> dict:
             )
             verify_payload = verify_res.data
             verify_degraded = verify_res.degraded
+            if not verify_degraded and isinstance(verify_payload, dict):
+                unsupported_claims = [
+                    str(x) for x in (verify_payload.get("unsupported_claims") or []) if str(x).strip()
+                ]
+                claims_verified = True
             if verify_degraded:
                 verify_payload = {}
                 EVENT_BUS.emit(
@@ -1533,7 +1595,8 @@ async def report_writer_node(state: ResearchState) -> dict:
                     + "\n".join(f"- {c}" for c in claims[:5])
                 )
                 prompt2 = (
-                    REPORT_PROMPT.format(
+                    _history_block(state.get("history"))
+                    + REPORT_PROMPT.format(
                         query=original_query, context_block=context_block, count=len(sources)
                     )
                     + lang_note
@@ -1555,6 +1618,9 @@ async def report_writer_node(state: ResearchState) -> dict:
                         {"stage": "revise", "reason": revise_meta.get("reason") or "修订未完成，已保留初稿"},
                     )
                 report = report2
+                # 修订版未重新核查，旧的不支持列表不再适用于新报告
+                unsupported_claims = []
+                claims_verified = False
                 report, used_refs = _verify_citations(report, sources)
                 EVENT_BUS.emit(task_id, "report_draft_done", {})
                 await _step(task_id, "report_write", "生成分析报告", "done", {"chars": len(report)})
@@ -1581,21 +1647,46 @@ async def report_writer_node(state: ResearchState) -> dict:
             degraded=report_degraded, degraded_reason=report_reason,
         )
         db.add(db_report)
+        # 多轮历史：把本轮报告写入 messages，下一次追问可带入 Planner/报告
+        db.add(Message(task_id=task_id, role="agent", content=report[:4000]))
         await db.flush()
         src_rows = (
             await db.execute(select(Source).where(Source.task_id == task_id))
         ).scalars().all()
         ref_to_src = {s.ref_no: s.id for s in src_rows}
-        for ref in used_refs:
-            if ref in ref_to_src:
-                db.add(
-                    Citation(
-                        report_id=db_report.id,
-                        ref_no=ref,
-                        source_id=ref_to_src[ref],
-                        claim_text="",
-                    )
+        claims = _extract_claims(report)
+        unsupported_n = 0
+        if claims:
+            for text, refs in claims:
+                supported = (
+                    _claim_supported(text, unsupported_claims) if claims_verified else None
                 )
+                if supported is False:
+                    unsupported_n += 1
+                for ref in refs:
+                    if ref in ref_to_src:
+                        db.add(
+                            Citation(
+                                report_id=db_report.id,
+                                ref_no=ref,
+                                source_id=ref_to_src[ref],
+                                claim_text=text,
+                                supported=supported,
+                            )
+                        )
+        else:
+            # 兜底：报告中没有任何 [n] 句（例如表格答案），保留来源级引用
+            for ref in used_refs:
+                if ref in ref_to_src:
+                    db.add(
+                        Citation(
+                            report_id=db_report.id,
+                            ref_no=ref,
+                            source_id=ref_to_src[ref],
+                            claim_text="",
+                            supported=None,
+                        )
+                    )
         metrics = state.get("metrics", {})
         # docs_processed：真实命中的唯一文档数（KB-only 口径）
         docs_processed = int(metrics.get("kb_docs", len(sources) if sources else 0))
@@ -1620,7 +1711,20 @@ async def report_writer_node(state: ResearchState) -> dict:
             "degraded_reasons": metrics.get("degraded_reasons", {}),
             "report_degraded": report_degraded,
             "report_degraded_reason": report_reason,
+            "claims_count": len(claims),
+            "claims_unsupported": unsupported_n,
         }
+        usage = trace.usage_snapshot()
+        tokens_in = int(usage.get("input_tokens", 0))
+        tokens_out = int(usage.get("output_tokens", 0))
+        stats["llm_calls"] = int(usage.get("calls", 0))
+        stats["llm_tokens_in"] = tokens_in
+        stats["llm_tokens_out"] = tokens_out
+        stats["llm_cost_usd"] = round(
+            tokens_in / 1000 * float(settings.llm_price_in_per_1k)
+            + tokens_out / 1000 * float(settings.llm_price_out_per_1k),
+            4,
+        )
         task = await db.get(ResearchTask, task_id)
         if task:
             task.status = "done"

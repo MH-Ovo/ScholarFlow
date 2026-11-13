@@ -100,6 +100,12 @@ export interface ChatMessage {
   content: string;
 }
 
+export interface ClaimItem {
+  claim_text: string;
+  ref_no: number;
+  supported: boolean | null;
+}
+
 export interface TaskDetail {
   id: string;
   title: string;
@@ -112,6 +118,7 @@ export interface TaskDetail {
   graph: GraphData;
   stats: Partial<RunStats>;
   messages: ChatMessage[];
+  claims?: ClaimItem[];
 }
 
 export interface TaskSummary {
@@ -133,6 +140,8 @@ export interface AnalyticsSummary {
   knowledge_sources: number;
   documents_processed: number;
   accuracy_rate: number;
+  latency?: { avg_sec: number; p95_sec: number; samples: number };
+  llm?: { tokens_in: number; tokens_out: number; calls: number; cost_usd: number };
 }
 
 /** SSE 事件载荷 */
@@ -172,7 +181,16 @@ export interface KbDocument {
   status: string; // pending/parsing/embedding/indexed/failed
   error_msg: string;
   chunk_count: number;
+  expected_chunks: number;
+  is_partial: boolean;
   created_at: string;
+}
+
+export interface KbDocumentPage {
+  items: KbDocument[];
+  total: number;
+  page: number;
+  page_size: number;
 }
 
 export interface KbChunk {

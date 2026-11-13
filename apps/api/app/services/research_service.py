@@ -229,10 +229,25 @@ async def _claim() -> dict | None:
 async def _run_claimed(row: dict) -> None:
     task_id = row["id"]
     token = trace.set_task(task_id)
+    trace.start_usage()
     started = time.time()
     status = "done"
     EVENT_BUS.emit(task_id, "task_started", {"attempt": row.get("attempt", 1)})
     try:
+        # 多轮历史：取本任务已完成轮次的 user/agent 消息；去掉本轮刚写入的用户提问
+        async with SessionLocal() as db:
+            msg_rows = (
+                await db.execute(
+                    select(Message)
+                    .where(Message.task_id == task_id)
+                    .order_by(Message.created_at)
+                )
+            ).scalars().all()
+        history = [{"role": m.role, "content": m.content} for m in msg_rows]
+        if history and history[-1]["role"] == "user" and history[-1]["content"] == row["query"]:
+            history = history[:-1]
+        history = history[-8:]
+
         graph = get_research_graph()
         run = asyncio.create_task(
             graph.ainvoke(
@@ -242,6 +257,7 @@ async def _run_claimed(row: dict) -> None:
                     "original_query": row["query"],
                     "lang": row.get("lang") or "zh",
                     "tenant_id": row.get("tenant_id") or settings.default_tenant_id,
+                    "history": history,
                     "metrics": {"t0": started},
                     "errors": [],
                 }

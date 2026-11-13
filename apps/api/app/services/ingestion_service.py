@@ -153,7 +153,9 @@ async def ingest_document(doc_id: int) -> None:
         chunk_units = chunk_text_hierarchical(text)
         if not chunk_units:
             raise RuntimeError("解析后未提取到有效文本")
-        if settings.ingest_max_chunks > 0:
+        total_chunks = len(chunk_units)
+        truncated = settings.ingest_max_chunks > 0 and total_chunks > settings.ingest_max_chunks
+        if truncated:
             chunk_units = chunk_units[: settings.ingest_max_chunks]
         child_texts = [u["child"] for u in chunk_units]
         parent_texts = [u["parent"] for u in chunk_units]
@@ -168,6 +170,8 @@ async def ingest_document(doc_id: int) -> None:
                 return
             doc.status = "embedding"
             doc.chunk_count = len(child_texts)
+            doc.expected_chunks = total_chunks
+            doc.is_partial = truncated
             await db.commit()
 
         from app.rag.models import encode_hybrid

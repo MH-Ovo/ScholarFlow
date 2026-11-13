@@ -10,7 +10,16 @@ class DocumentOut(BaseModel):
     status: str
     error_msg: str = ""
     chunk_count: int = 0
+    expected_chunks: int = 0
+    is_partial: bool = False
     created_at: str
+
+
+class DocumentPageOut(BaseModel):
+    items: list[DocumentOut]
+    total: int
+    page: int
+    page_size: int
 
 
 class UploadItemOut(BaseModel):
@@ -39,6 +48,8 @@ class DocumentDetailOut(BaseModel):
     status: str
     error_msg: str = ""
     chunk_count: int = 0
+    expected_chunks: int = 0
+    is_partial: bool = False
     chunks: list[ChunkOut]
 
 

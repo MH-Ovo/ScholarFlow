@@ -22,12 +22,10 @@ from sqlalchemy import select  # noqa: E402
 from app.agents.mock_data import mock_query_process  # noqa: E402
 from app.agents.nodes import (  # noqa: E402
     _apply_rerank,
-    _doc_languages,
     _expand_with_siblings,
     _hybrid_search,
-    _is_chinese,
-    _merge_by_rrf,
     _multi_query_search,
+    _pick_parent_diverse,
 )
 from app.agents.prompts import QUERY_PROCESS_PROMPT  # noqa: E402
 from app.core.config import get_settings  # noqa: E402
@@ -173,13 +171,15 @@ async def run_retrieval_layer(
         q = it["question"]
         fused = await production_kb_candidates(store, q, llm)
         fused_raw = await _hybrid_search(store, q, None, top_k=EVAL_TOP_K)
+        # 与生产 merger 一致：最终窗口按 parent 去重
+        selected = _pick_parent_diverse(fused, EVAL_CONTEXT_K)
 
         child_contexts = [
             f"{h['document_name']} · 片段{h['chunk_index']+1}\n{(h.get('text') or '')[:300]}"
-            for h in fused[:EVAL_CONTEXT_K]
+            for h in selected
         ]
         parent_contexts = []
-        for h in fused[:EVAL_CONTEXT_K]:
+        for h in selected:
             key = f"{h['document_id']}#{h['chunk_index']}"
             p = parent_map.get(key) or ""
             parent_contexts.append(
@@ -196,7 +196,7 @@ async def run_retrieval_layer(
             if "#" in k:
                 d, i = k.split("#")
                 rel_ids.add((int(d), int(i)))
-        prod_ids, raw_ids = id_hits(fused), id_hits(fused_raw)
+        prod_ids, raw_ids = id_hits(selected), id_hits(fused_raw)
         overlap_p, overlap_r = len(prod_ids & rel_ids), len(raw_ids & rel_ids)
 
         samples.append({

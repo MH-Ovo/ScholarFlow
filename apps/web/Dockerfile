@@ -4,6 +4,9 @@ FROM node:20-alpine AS builder
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
+# NEXT_PUBLIC_* 在构建时内联；SSE 直连地址必须在 build 阶段给定
+ARG NEXT_PUBLIC_SSE_BASE=""
+ENV NEXT_PUBLIC_SSE_BASE=$NEXT_PUBLIC_SSE_BASE
 COPY . .
 RUN npm run build
 

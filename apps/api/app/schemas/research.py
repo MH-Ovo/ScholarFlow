@@ -53,6 +53,8 @@ class ReportOut(BaseModel):
     summary: str
     markdown: str
     version: int
+    degraded: bool = False
+    degraded_reason: str = ""
 
 
 class TaskSummaryOut(BaseModel):

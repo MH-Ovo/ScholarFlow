@@ -17,6 +17,7 @@ import argparse
 import asyncio
 import json
 import math
+import os
 import sys
 import time
 import types
@@ -42,7 +43,11 @@ EVAL_DIR = PROJECT_ROOT / "eval"
 sys.path.insert(0, str(PROJECT_ROOT / "apps" / "api"))
 sys.path.insert(0, str(EVAL_DIR / "scripts"))
 
-BASE = "http://127.0.0.1:8900"
+BASE = os.environ.get("SCHOLARFLOW_BASE", "http://127.0.0.1:8900")
+SCHOLARFLOW_API_KEY = os.environ.get("SCHOLARFLOW_API_KEY", "")
+
+def _auth_headers() -> dict:
+    return {"X-API-Key": SCHOLARFLOW_API_KEY} if SCHOLARFLOW_API_KEY else {}
 DEFAULT_DATASET = EVAL_DIR / "dataset_scholarflow.json"
 
 
@@ -70,6 +75,7 @@ async def run_retrieval(
     include_child: bool = False,
 ) -> list[dict]:
     from eval_run import chunk_text_map, production_kb_candidates
+    from app.agents.nodes import _pick_parent_diverse
     from app.llm.gateway import get_llm
     from app.rag.vector_store import get_vector_store
 
@@ -82,8 +88,9 @@ async def run_retrieval(
     for i, it in enumerate(items, 1):
         q = it["question"]
         hits = await production_kb_candidates(store, q, llm)
+        selected = _pick_parent_diverse(hits, contexts)
         ctxs = []
-        for h in hits[:contexts]:
+        for h in selected:
             key = f"{h['document_id']}#{h['chunk_index']}"
             child = (h.get("text") or "")[:800]
             parent = (parent_map.get(key) or "")[:parent_chars]
@@ -109,32 +116,57 @@ async def run_retrieval(
     return samples
 
 
-async def run_generation(items: list[dict], timeout: float) -> list[dict]:
-    async with httpx.AsyncClient(base_url=BASE, timeout=httpx.Timeout(60.0, connect=10.0)) as client:
+async def run_generation(
+    items: list[dict], timeout: float, task_sleep: float = 0.0, max_retries: int = 2
+) -> list[dict]:
+    async with httpx.AsyncClient(
+        base_url=BASE, timeout=httpx.Timeout(60.0, connect=10.0), headers=_auth_headers()
+    ) as client:
         out = []
         for i, it in enumerate(items, 1):
+            task_id = ""
+            detail: dict = {}
+            report = ""
+            sources: list = []
+            attempt = 0
             started = time.time()
-            resp = await client.post(
-                "/api/v1/research",
-                json={"query": it["question"], "lang": it.get("lang", "zh")},
-            )
-            resp.raise_for_status()
-            task_id = resp.json()["task_id"]
-            detail = None
-            deadline = time.time() + timeout
-            while time.time() < deadline:
-                await asyncio.sleep(2)
-                try:
-                    r = await client.get(f"/api/v1/research/{task_id}")
-                except Exception:
+            while True:
+                resp = await client.post(
+                    "/api/v1/research",
+                    json={"query": it["question"], "lang": it.get("lang", "zh")},
+                )
+                resp.raise_for_status()
+                task_id = resp.json()["task_id"]
+                deadline = time.time() + timeout
+                detail = {}
+                while time.time() < deadline:
+                    await asyncio.sleep(2)
+                    try:
+                        r = await client.get(f"/api/v1/research/{task_id}")
+                    except Exception:
+                        continue
+                    if r.status_code == 200:
+                        detail = r.json()
+                        if detail.get("status") in ("done", "failed", "cancelled"):
+                            break
+                report = (detail.get("report") or {}).get("markdown", "") or ""
+                sources = detail.get("sources") or []
+                degraded = bool(
+                    (detail.get("report") or {}).get("degraded")
+                    or (detail.get("stats") or {}).get("report_degraded")
+                )
+                bad = detail.get("status") != "done" or degraded or not report.strip()
+                if bad and attempt < max_retries:
+                    attempt += 1
+                    print(
+                        f"[generation] {it['id']} retry {attempt}/{max_retries} "
+                        f"status={detail.get('status')} degraded={degraded}",
+                        flush=True,
+                    )
+                    await asyncio.sleep(60)
                     continue
-                if r.status_code == 200:
-                    detail = r.json()
-                    if detail.get("status") in ("done", "failed"):
-                        break
-            detail = detail or {}
-            report = (detail.get("report") or {}).get("markdown", "") or ""
-            sources = detail.get("sources") or []
+                break
+
             contexts = []
             for s in sources:
                 meta = s.get("meta") or {}
@@ -151,6 +183,10 @@ async def run_generation(items: list[dict], timeout: float) -> list[dict]:
                     "reference": it.get("reference", ""),
                     "task_id": task_id,
                     "status": detail.get("status", "timeout"),
+                    "degraded": bool(
+                        (detail.get("report") or {}).get("degraded")
+                        or (detail.get("stats") or {}).get("report_degraded")
+                    ),
                     "elapsed_sec": round(time.time() - started, 1),
                     "report_chars": len(report),
                     "sources_count": len(sources),
@@ -162,9 +198,12 @@ async def run_generation(items: list[dict], timeout: float) -> list[dict]:
             )
             print(
                 f"[generation] [{i}/{len(items)}] {it['id']} {out[-1]['status']} "
-                f"{out[-1]['elapsed_sec']}s chars={len(report)} sources={len(sources)}",
+                f"{out[-1]['elapsed_sec']}s chars={len(report)} sources={len(sources)} "
+                f"degraded={out[-1]['degraded']}",
                 flush=True,
             )
+            if task_sleep > 0 and i < len(items):
+                await asyncio.sleep(task_sleep)
         return out
 
 
@@ -431,6 +470,8 @@ async def main() -> int:
     parser.add_argument("--merge-into", default="", help="把本次补评结果合并回已有 RAGAS JSON")
     parser.add_argument("--faithfulness-only", action="store_true", help="补评时只算 faithfulness")
     parser.add_argument("--timeout", type=float, default=300.0)
+    parser.add_argument("--task-sleep", type=float, default=0.0, help="生成任务之间的间隔秒数")
+    parser.add_argument("--max-retries", type=int, default=2, help="报告降级/失败时的重跑次数")
     parser.add_argument("--skip-retrieval", action="store_true")
     parser.add_argument("--skip-generation", action="store_true")
     parser.add_argument(
@@ -505,13 +546,15 @@ async def main() -> int:
             print(f"[ragas] reused generation metrics={gen['aggregate']}", flush=True)
         else:
             try:
-                async with httpx.AsyncClient(timeout=10.0) as c:
+                async with httpx.AsyncClient(timeout=10.0, headers=_auth_headers()) as c:
                     h = (await c.get(f"{BASE}/health")).json()
                 print(f"[ragas] backend {h}", flush=True)
             except Exception as exc:  # noqa: BLE001
                 print(f"[ragas] 后端不可用：{exc}", flush=True)
                 return 2
-            samples = await run_generation(items, args.timeout)
+            samples = await run_generation(
+                items, args.timeout, args.task_sleep, args.max_retries
+            )
             # 只对有报告、非 unanswerable 的样本算 faithfulness
             unanswerable_ids = {it["id"] for it in items if it.get("unanswerable")}
             scorable = [

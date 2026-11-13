@@ -67,7 +67,9 @@ async def _reset_failed_document(doc_id: int) -> None:
         await db.commit()
 
 
-async def prepare_cnki_document(source_id: int, record_ref: str, title: str) -> dict:
+async def prepare_cnki_document(
+    source_id: int, record_ref: str, title: str, tenant_id: str = "default"
+) -> dict:
     """下载 PDF 并登记 Document（不执行解析）。
 
     返回 state：
@@ -133,7 +135,11 @@ async def prepare_cnki_document(source_id: int, record_ref: str, title: str) -> 
     retry_failed = False
     async with SessionLocal() as db:
         existing = (
-            await db.execute(select(Document).where(Document.file_path == filename))
+            await db.execute(
+                select(Document).where(
+                    Document.file_path == filename, Document.tenant_id == tenant_id
+                )
+            )
         ).scalars().first()
 
         if existing is not None:
@@ -164,6 +170,8 @@ async def prepare_cnki_document(source_id: int, record_ref: str, title: str) -> 
                 size_bytes=size,
                 file_path=filename,
                 status="pending",
+                tenant_id=tenant_id,
+                content_hash=sha,
             )
             db.add(doc)
             await db.flush()

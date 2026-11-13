@@ -58,10 +58,23 @@ services:
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
       DEEPSEEK_MODEL: ${DEEPSEEK_MODEL:-deepseek-v4-flash}
       TAVILY_API_KEY: ${TAVILY_API_KEY:-}
+      AUTH_ENABLED: "true"
+      API_KEYS: ${API_KEYS:-dev-local-key:default:local}
+      AUTH_LOCALHOST_BYPASS: "false"
+      SESSION_SECRET: ${SESSION_SECRET:-}
+      RESEARCH_WORKER_COUNT: ${RESEARCH_WORKER_COUNT:-1}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost,http://127.0.0.1:5173}
       HF_HOME: /models
       HF_ENDPOINT: https://hf-mirror.com
     ports: ["8900:8000"]
-    volumes: [../models:/models]
+    volumes:
+      - ../models:/models
+      - ../data/uploads:/app/app/uploads
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
     depends_on:
       postgres: { condition: service_healthy }
       qdrant: { condition: service_started }
@@ -69,13 +82,21 @@ services:
       redis: { condition: service_started }
 
   web:
-    build: ../apps/web
+    build:
+      context: ../apps/web
+      args:
+        # 浏览器直连宿主机 8900 的后端（避开 Next 代理缓冲 SSE）
+        NEXT_PUBLIC_SSE_BASE: ${NEXT_PUBLIC_SSE_BASE:-http://localhost:8900}
     # Next.js standalone server（容器内监听 3000，对外映射 80）
     ports: ["80:3000"]
     environment:
       # 浏览器请求 /api/* 由 Next 服务端转发到 api 容器
       API_PROXY_TARGET: http://api:8000
-    depends_on: [api]
+      # SSE 直连宿主机映射端口，避免 Next 代理缓冲流式事件
+      NEXT_PUBLIC_SSE_BASE: http://localhost:8900
+    depends_on:
+      api:
+        condition: service_healthy
 
 volumes:
   pg_data:

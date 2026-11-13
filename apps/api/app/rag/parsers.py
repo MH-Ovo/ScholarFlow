@@ -57,6 +57,8 @@ def _parse_pdf_pymupdf(path: Path) -> str:
     pages: list[str] = []
     try:
         for page in doc:
+            if page.number >= int(settings.max_pdf_pages):
+                break
             page_text = _parse_pdf_page(page, doc, ocr_image)
             if page_text.strip():
                 pages.append(f"[第{page.number + 1}页]\n{page_text}")
@@ -70,7 +72,10 @@ def _parse_pdf_text_only(path: Path) -> str:
     from pypdf import PdfReader
 
     reader = PdfReader(str(path))
-    pages = [(page.extract_text() or "") for page in reader.pages]
+    pages = [
+        (page.extract_text() or "")
+        for page in reader.pages[: int(settings.max_pdf_pages)]
+    ]
     return _clean("\n\n".join(pages))
 
 

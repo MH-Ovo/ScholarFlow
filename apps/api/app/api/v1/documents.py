@@ -1,7 +1,11 @@
-"""知识库文档管理：上传 / 列表 / 详情(含 chunk 预览) / 删除 / KB 统计。"""
-from fastapi import APIRouter, BackgroundTasks, File, HTTPException, UploadFile
+"""知识库文档管理：上传 / 列表 / 详情(含 chunk 预览) / 删除 / 重试 / KB 统计。
+
+所有查询按 principal.tenant_id 隔离；上传走流式落盘 + magic 校验 + 租户配额。
+"""
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile
 from sqlalchemy import delete, func, select
 
+from app.core.auth import Principal, require_principal
 from app.core.config import get_settings
 from app.core.timeutil import fmt_dt
 from app.db.session import SessionLocal
@@ -15,10 +19,11 @@ from app.schemas.documents import (
     UploadResponse,
 )
 from app.services.ingestion_service import (
-    MAX_FILE_BYTES,
     UPLOAD_DIR,
+    UploadRejected,
+    find_duplicate,
     ingest_document,
-    save_upload,
+    save_upload_file,
 )
 
 documents_router = APIRouter(prefix="/documents", tags=["documents"])
@@ -28,49 +33,102 @@ settings = get_settings()
 MAX_FILES_PER_BATCH = 5
 
 
+async def _tenant_usage(db, tenant_id: str) -> tuple[int, int]:
+    row = (
+        await db.execute(
+            select(func.count(Document.id), func.coalesce(func.sum(Document.size_bytes), 0))
+            .where(Document.tenant_id == tenant_id)
+        )
+    ).first()
+    return int(row[0] or 0), int(row[1] or 0)
+
+
 @documents_router.post("", response_model=UploadResponse)
 async def upload_documents(
     background_tasks: BackgroundTasks,
     files: list[UploadFile] = File(...),
+    principal: Principal = Depends(require_principal),
 ):
     if len(files) > MAX_FILES_PER_BATCH:
         raise HTTPException(status_code=422, detail=f"单次最多上传 {MAX_FILES_PER_BATCH} 个文件")
-    items = []
+
+    items: list[dict] = []
+    max_bytes = int(settings.max_tenant_storage_mb) * 1024 * 1024
     async with SessionLocal() as db:
-        for f in files:
-            # 先按 multipart 声明大小预检：超限文件直接拒绝，避免整读进内存后才校验
-            if f.size is not None and f.size > MAX_FILE_BYTES:
-                raise HTTPException(status_code=422, detail=f"{f.filename} 超过 {settings.max_upload_mb}MB 限制")
-            content = await f.read()
-            if len(content) > MAX_FILE_BYTES:
-                raise HTTPException(status_code=422, detail=f"{f.filename} 超过 {settings.max_upload_mb}MB 限制")
-            try:
-                doc_type, relative = save_upload(f.filename or "unnamed", content)
-            except ValueError as exc:
-                raise HTTPException(status_code=422, detail=str(exc)) from exc
+        count, used = await _tenant_usage(db, principal.tenant_id)
+    if count + len(files) > int(settings.max_documents_per_tenant):
+        raise HTTPException(
+            status_code=422,
+            detail=f"租户文档数已达上限 {settings.max_documents_per_tenant}",
+        )
+
+    for f in files:
+        try:
+            doc_type, relative, size, digest = await save_upload_file(f)
+        except UploadRejected as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+        if used + size > max_bytes:
+            (UPLOAD_DIR / relative).unlink(missing_ok=True)
+            raise HTTPException(
+                status_code=422,
+                detail=f"租户存储配额已满（{settings.max_tenant_storage_mb}MB）",
+            )
+
+        duplicate = await find_duplicate(principal.tenant_id, digest)
+        if duplicate is not None:
+            (UPLOAD_DIR / relative).unlink(missing_ok=True)
+            items.append(
+                {
+                    "id": duplicate.id,
+                    "name": duplicate.name,
+                    "doc_type": duplicate.doc_type,
+                    "status": duplicate.status,
+                    "duplicate": True,
+                }
+            )
+            continue
+
+        async with SessionLocal() as db:
             doc = Document(
                 name=f.filename or "unnamed",
                 doc_type=doc_type,
-                size_bytes=len(content),
+                size_bytes=size,
                 file_path=relative,
                 status="pending",
+                tenant_id=principal.tenant_id,
+                content_hash=digest,
             )
             db.add(doc)
             await db.flush()
             doc_id = doc.id
-            items.append({"id": doc_id, "name": doc.name, "doc_type": doc.doc_type, "status": "pending"})
-        await db.commit()
+            await db.commit()
+        used += size
+        items.append(
+            {
+                "id": doc_id,
+                "name": doc.name,
+                "doc_type": doc.doc_type,
+                "status": "pending",
+                "duplicate": False,
+            }
+        )
 
     for item in items:
-        background_tasks.add_task(ingest_document, item["id"])
+        if not item.get("duplicate"):
+            background_tasks.add_task(ingest_document, item["id"])
     return UploadResponse(items=items)
 
 
 @documents_router.get("", response_model=list[DocumentOut])
-async def list_documents():
+async def list_documents(principal: Principal = Depends(require_principal)):
     async with SessionLocal() as db:
         rows = (
-            await db.execute(select(Document).order_by(Document.created_at.desc()))
+            await db.execute(
+                select(Document)
+                .where(Document.tenant_id == principal.tenant_id)
+                .order_by(Document.created_at.desc())
+            )
         ).scalars().all()
     return [
         DocumentOut(
@@ -88,10 +146,10 @@ async def list_documents():
 
 
 @documents_router.get("/{doc_id}", response_model=DocumentDetailOut)
-async def get_document(doc_id: int):
+async def get_document(doc_id: int, principal: Principal = Depends(require_principal)):
     async with SessionLocal() as db:
         doc = await db.get(Document, doc_id)
-        if doc is None:
+        if doc is None or doc.tenant_id != principal.tenant_id:
             raise HTTPException(status_code=404, detail="document not found")
         chunks = (
             await db.execute(
@@ -113,17 +171,41 @@ async def get_document(doc_id: int):
     )
 
 
-@documents_router.delete("/{doc_id}")
-async def delete_document(doc_id: int):
+@documents_router.post("/{doc_id}/retry")
+async def retry_document(
+    doc_id: int,
+    background_tasks: BackgroundTasks,
+    principal: Principal = Depends(require_principal),
+):
     async with SessionLocal() as db:
         doc = await db.get(Document, doc_id)
-        if doc is None:
+        if doc is None or doc.tenant_id != principal.tenant_id:
+            raise HTTPException(status_code=404, detail="document not found")
+        if doc.status != "failed":
+            raise HTTPException(status_code=409, detail="only failed documents can retry")
+        await db.execute(delete(DocumentChunk).where(DocumentChunk.document_id == doc_id))
+        doc.status = "pending"
+        doc.error_msg = ""
+        doc.chunk_count = 0
+        await db.commit()
+    try:
+        await get_vector_store().delete_by_document(doc_id)
+    except Exception:
+        pass
+    background_tasks.add_task(ingest_document, doc_id)
+    return {"ok": True}
+
+
+@documents_router.delete("/{doc_id}")
+async def delete_document(doc_id: int, principal: Principal = Depends(require_principal)):
+    async with SessionLocal() as db:
+        doc = await db.get(Document, doc_id)
+        if doc is None or doc.tenant_id != principal.tenant_id:
             raise HTTPException(status_code=404, detail="document not found")
         file_path = doc.file_path
         await db.execute(delete(DocumentChunk).where(DocumentChunk.document_id == doc_id))
         await db.execute(delete(Document).where(Document.id == doc_id))
         await db.commit()
-    # 联动删除 Qdrant 向量（失败不阻塞，下次检索按 document_id 无命中）
     try:
         await get_vector_store().delete_by_document(doc_id)
     except Exception:
@@ -137,11 +219,14 @@ async def delete_document(doc_id: int):
 
 
 @kb_router.get("/chunk")
-async def kb_chunk(document_id: int, chunk_index: int):
-    """按 document_id + chunk_index 返回完整片段全文（来源溯源查看）。"""
+async def kb_chunk(
+    document_id: int,
+    chunk_index: int,
+    principal: Principal = Depends(require_principal),
+):
     async with SessionLocal() as db:
         doc = await db.get(Document, document_id)
-        if doc is None:
+        if doc is None or doc.tenant_id != principal.tenant_id:
             raise HTTPException(status_code=404, detail="document not found")
         chunk = (
             await db.execute(
@@ -162,7 +247,7 @@ async def kb_chunk(document_id: int, chunk_index: int):
 
 
 @kb_router.get("/stats", response_model=KbStats)
-async def kb_stats():
+async def kb_stats(principal: Principal = Depends(require_principal)):
     store = get_vector_store()
     try:
         await store.ensure_collection()
@@ -170,21 +255,40 @@ async def kb_stats():
     except Exception:
         ready = False
     async with SessionLocal() as db:
-        documents = (await db.execute(select(func.count(Document.id)))).scalar() or 0
-        chunks = (await db.execute(select(func.count(DocumentChunk.id)))).scalar() or 0
+        documents = (
+            await db.execute(
+                select(func.count(Document.id)).where(Document.tenant_id == principal.tenant_id)
+            )
+        ).scalar() or 0
+        chunks = (
+            await db.execute(
+                select(func.count(DocumentChunk.id))
+                .join(Document, Document.id == DocumentChunk.document_id)
+                .where(Document.tenant_id == principal.tenant_id)
+            )
+        ).scalar() or 0
         indexed = (
             await db.execute(
-                select(func.count(Document.id)).where(Document.status == "indexed")
+                select(func.count(Document.id)).where(
+                    Document.tenant_id == principal.tenant_id,
+                    Document.status == "indexed",
+                )
             )
         ).scalar() or 0
         processing = (
             await db.execute(
-                select(func.count(Document.id)).where(Document.status.in_(["pending", "parsing", "embedding"]))
+                select(func.count(Document.id)).where(
+                    Document.tenant_id == principal.tenant_id,
+                    Document.status.in_(["pending", "parsing", "embedding"]),
+                )
             )
         ).scalar() or 0
         failed = (
             await db.execute(
-                select(func.count(Document.id)).where(Document.status == "failed")
+                select(func.count(Document.id)).where(
+                    Document.tenant_id == principal.tenant_id,
+                    Document.status == "failed",
+                )
             )
         ).scalar() or 0
     return KbStats(

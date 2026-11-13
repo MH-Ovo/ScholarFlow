@@ -29,11 +29,19 @@ class ResearchTask(Base):
     title: Mapped[str] = mapped_column(sa.String(200), default="")
     query: Mapped[str] = mapped_column(sa.Text, default="")
     mode: Mapped[str] = mapped_column(sa.String(20), default="deep")
-    status: Mapped[str] = mapped_column(sa.String(20), default="running", index=True)
+    status: Mapped[str] = mapped_column(sa.String(20), default="queued", index=True)
+    tenant_id: Mapped[str] = mapped_column(sa.String(64), default="default", index=True)
+    user_id: Mapped[str] = mapped_column(sa.String(64), default="")
+    lang: Mapped[str] = mapped_column(sa.String(8), default="zh")
+    attempt: Mapped[int] = mapped_column(sa.Integer, default=0)
+    cancel_requested: Mapped[bool] = mapped_column(sa.Boolean, default=False)
+    error: Mapped[str] = mapped_column(sa.Text, default="")
     duration_sec: Mapped[float] = mapped_column(sa.Float, default=0.0)
     stats_json: Mapped[dict] = mapped_column(sa.JSON, default=dict)
     graph_json: Mapped[dict] = mapped_column(sa.JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), default=utcnow)
+    queued_at: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True), nullable=True)
+    started_at: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True), nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(
         sa.DateTime(timezone=True), nullable=True
     )
@@ -94,6 +102,9 @@ class Report(Base):
     summary: Mapped[str] = mapped_column(sa.Text, default="")
     markdown: Mapped[str] = mapped_column(sa.Text, default="")
     version: Mapped[int] = mapped_column(sa.Integer, default=1)
+    tenant_id: Mapped[str] = mapped_column(sa.String(64), default="default", index=True)
+    degraded: Mapped[bool] = mapped_column(sa.Boolean, default=False)
+    degraded_reason: Mapped[str] = mapped_column(sa.String(300), default="")
     created_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), default=utcnow)
 
 
@@ -120,6 +131,8 @@ class Document(Base):
     size_bytes: Mapped[int] = mapped_column(sa.Integer, default=0)
     file_path: Mapped[str] = mapped_column(sa.String(500), default="")  # uploads 相对路径
     status: Mapped[str] = mapped_column(sa.String(20), default="pending")  # pending/parsing/embedding/indexed/failed
+    tenant_id: Mapped[str] = mapped_column(sa.String(64), default="default", index=True)
+    content_hash: Mapped[str] = mapped_column(sa.String(64), default="", index=True)
     error_msg: Mapped[str] = mapped_column(sa.String(300), default="")
     chunk_count: Mapped[int] = mapped_column(sa.Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), default=utcnow)
@@ -136,3 +149,21 @@ class DocumentChunk(Base):
     text: Mapped[str] = mapped_column(sa.Text, default="")
     parent_text: Mapped[str] = mapped_column(sa.Text, default="")  # Parent-Child：章节级上下文
     embedding_json: Mapped[list | None] = mapped_column(sa.JSON, nullable=True)
+
+
+class TaskEvent(Base):
+    """任务事件持久化：SSE 重放与多 worker 之间的唯一事实源。
+
+    写入走 EventBus 的批量队列，读取按 (task_id, id) 索引轮询。
+    """
+
+    __tablename__ = "task_events"
+    __table_args__ = (sa.Index("ix_task_events_task_id_id", "task_id", "id"),)
+
+    id: Mapped[int] = mapped_column(sa.Integer, primary_key=True, autoincrement=True)
+    task_id: Mapped[str] = mapped_column(
+        sa.String(36), sa.ForeignKey("research_tasks.id"), index=True
+    )
+    event: Mapped[str] = mapped_column(sa.String(40), default="")
+    data_json: Mapped[dict] = mapped_column(sa.JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), default=utcnow)

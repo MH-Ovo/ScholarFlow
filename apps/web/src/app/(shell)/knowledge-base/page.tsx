@@ -56,6 +56,12 @@ export default function KnowledgeBasePage() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["kb-documents"] }),
   });
 
+  const retryMutation = useMutation({
+    mutationFn: api.retryDocument,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["kb-documents"] }),
+    onError: (e: Error) => window.alert(e.message),
+  });
+
   const onDelete = (doc: KbDocument) => {
     if (window.confirm(`确认删除「${doc.name}」？其 ${doc.chunk_count} 个切片将一并从向量库移除。`)) {
       deleteMutation.mutate(doc.id);
@@ -138,6 +144,7 @@ export default function KnowledgeBasePage() {
                 setPreviewOpen(true);
               }}
               onDelete={onDelete}
+              onRetry={(d) => retryMutation.mutate(d.id)}
             />
           )}
         </div>

@@ -9,6 +9,7 @@ import asyncio
 import json
 import re
 import time
+from dataclasses import dataclass, field
 from typing import Any, AsyncIterator
 
 from app.core import trace
@@ -25,6 +26,16 @@ def _extract_json(text: str) -> dict | list | None:
         return json.loads(candidate.strip())
     except (json.JSONDecodeError, ValueError):
         return None
+
+
+@dataclass
+class JsonResult:
+    """结构化抽取结果：显式区分 mock / 降级，禁止把失败伪装成正常输出。"""
+
+    data: Any
+    degraded: bool = False
+    reason: str = ""
+    used_mock: bool = False
 
 
 class LLMGateway:
@@ -59,10 +70,15 @@ class LLMGateway:
         return settings.chat_provider if self._chat else "mock"
 
     # ---------- 报告流式生成 ----------
-    async def stream_report(self, prompt: str, mock_text: str) -> AsyncIterator[str]:
+    async def stream_report(
+        self, prompt: str, mock_text: str, meta: dict | None = None
+    ) -> AsyncIterator[str]:
         started = time.time()
         parts: list[str] = []
         error: str | None = None
+        if meta is not None:
+            meta.setdefault("degraded", False)
+            meta.setdefault("reason", "")
         try:
             if self._chat:
                 try:
@@ -78,11 +94,16 @@ class LLMGateway:
                     return
                 except Exception as exc:
                     error = f"{type(exc).__name__}: {str(exc)[:200]}"
-                    # 真实调用失败/超时 → 降级摘录补全（保证链路不中断），并记录原因
+                    if meta is not None:
+                        meta["degraded"] = True
+                        meta["reason"] = error
+                    # 真实调用失败/超时 → 有部分输出就保留，避免"半篇报告 + 摘录"拼接
                     try:
                         print(f"[kra][llm] 真实 LLM 流式降级: {error}", flush=True)
                     except Exception:
                         pass
+                    if parts:
+                        return
             for piece in _chunk_text(mock_text):
                 parts.append(piece)
                 yield piece
@@ -98,7 +119,7 @@ class LLMGateway:
             )
 
     # ---------- 结构化抽取（规划 / 图谱） ----------
-    async def extract_json(self, prompt: str, mock_payload: Any) -> Any:
+    async def extract_json_result(self, prompt: str, mock_payload: Any) -> JsonResult:
         started = time.time()
         output = ""
         usage = None
@@ -112,6 +133,8 @@ class LLMGateway:
                 if usage is not None and not isinstance(usage, dict):
                     usage = dict(usage)
                 parsed = _extract_json(output)
+                if parsed is None:
+                    error = "json_parse_failed"
             except Exception as exc:
                 error = f"{type(exc).__name__}: {str(exc)[:160]}"
         trace.record_llm(
@@ -121,9 +144,20 @@ class LLMGateway:
             output,
             (time.time() - started) * 1000,
             usage=usage,
-            error=error or (None if parsed is not None else "json_parse_failed"),
+            error=error,
         )
-        return parsed if parsed is not None else mock_payload
+        if parsed is not None:
+            return JsonResult(data=parsed)
+        return JsonResult(
+            data=mock_payload,
+            degraded=bool(self._chat_json and error),
+            reason=error or "",
+            used_mock=not bool(self._chat_json),
+        )
+
+    async def extract_json(self, prompt: str, mock_payload: Any) -> Any:
+        """兼容旧调用：只返回 data。需要降级标记的节点用 extract_json_result。"""
+        return (await self.extract_json_result(prompt, mock_payload)).data
 
 
 def _chunk_text(text: str, size: int = 6) -> list[str]:

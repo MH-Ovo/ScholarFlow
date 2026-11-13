@@ -10,6 +10,7 @@ def _merge_dict(a: dict | None, b: dict | None) -> dict:
 
 class ResearchState(TypedDict, total=False):
     task_id: str
+    tenant_id: str                  # 租户（知识库隔离 + 配额）
     query: str                       # 当前活动查询（重检索改写后可能变化）
     original_query: str              # 用户原始问题（报告始终回答它）
     query_type: str                  # 意图路由结果：chat / knowledge

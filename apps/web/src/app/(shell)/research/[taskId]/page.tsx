@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
+import { RotateCcw, Square } from "lucide-react";
 import { GraphMiniPanel } from "@/components/graph/GraphMiniPanel";
 import { RightPanel } from "@/components/layout/RightPanel";
 import { AgentHeader } from "@/components/research/AgentHeader";
@@ -11,6 +12,7 @@ import { ProcessTimeline } from "@/components/research/ProcessTimeline";
 import { ReportHeader } from "@/components/research/ReportHeader";
 import { ReportStreamArea } from "@/components/research/ReportStreamArea";
 import { ReportViewer } from "@/components/research/ReportViewer";
+import { Button } from "@/components/ui/button";
 import { ResearchComposer } from "@/components/research/ResearchComposer";
 import { UserBubble } from "@/components/research/UserBubble";
 import { SourcesPanel } from "@/components/sources/SourcesPanel";
@@ -38,11 +40,18 @@ export default function ResearchPage() {
   const reports = useResearchStore((s) => s.reports);
   const headerTitle = useResearchStore((s) => s.reportTitle || s.title);
   const error = useResearchStore((s) => s.error);
+  const degradedStages = useResearchStore((s) => s.degradedStages);
+  const reportDegraded = useResearchStore((s) => s.reportDegraded);
+  const reportDegradedReason = useResearchStore((s) => s.reportDegradedReason);
+  const [busy, setBusy] = useState(false);
   const streaming = phase === "streaming";
 
   // 挂载/换任务：拉取详情并水合 store（运行中任务随后由 SSE 接管）
   useEffect(() => {
-    if (!taskId || taskId === useResearchStore.getState().taskId) return;
+    if (!taskId) return;
+    const st = useResearchStore.getState();
+    // 同一任务正在流式渲染时不要被挂载快照打断；其余情况（从 Library 重进/重试）都要重新水合
+    if (taskId === st.taskId && st.phase === "streaming") return;
     api
       .getResearch(taskId)
       .then((d) => useResearchStore.getState().hydrate(d))
@@ -63,7 +72,40 @@ export default function ResearchPage() {
     }
   };
 
+  const cancelRun = async () => {
+    if (!taskId || busy) return;
+    setBusy(true);
+    try {
+      await api.cancelResearch(taskId);
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : "取消失败");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const retryRun = async () => {
+    if (!taskId || busy) return;
+    setBusy(true);
+    try {
+      await api.retryResearch(taskId);
+      useResearchStore.getState().restartRun();
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : "重试失败");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const lastMsgIndex = Math.max(0, messages.length - 1);
+  const stageLabel: Record<string, string> = {
+    planner: "检索规划",
+    query: "查询增强",
+    grade: "质量评判",
+    rewrite: "问题改写",
+    verify: "答案核查",
+    report: "报告生成",
+  };
 
   return (
     <>
@@ -98,6 +140,70 @@ export default function ResearchPage() {
                       {phase === "interrupted" && (
                         <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
                           连接中断，研究可能未完成。请刷新页面查看最终结果，或重新提问。
+                        </div>
+                      )}
+
+                      {(degradedStages.length > 0 || reportDegraded) && (
+                        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                          <div className="font-medium">本次运行有降级，结果可能不完整</div>
+                          <div className="mt-1 text-xs leading-relaxed">
+                            {degradedStages.length > 0
+                              ? degradedStages
+                                  .map(
+                                    ({ stage, reason }) =>
+                                      `${stageLabel[stage] ?? stage}${reason ? `：${reason}` : ""}`,
+                                  )
+                                  .join("；")
+                              : `报告生成降级${reportDegradedReason ? `：${reportDegradedReason}` : ""}`}
+                          </div>
+                          {phase === "done" && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="mt-2 h-7 gap-1.5 text-xs"
+                              disabled={busy}
+                              onClick={async () => {
+                                if (!taskId || busy) return;
+                                setBusy(true);
+                                try {
+                                  await api.retryResearch(taskId, true);
+                                  useResearchStore.getState().restartRun();
+                                } catch (e) {
+                                  window.alert(e instanceof Error ? e.message : "重试失败");
+                                } finally {
+                                  setBusy(false);
+                                }
+                              }}
+                            >
+                              <RotateCcw className="h-3.5 w-3.5" /> 重新生成
+                            </Button>
+                          )}
+                        </div>
+                      )}
+
+                      {(streaming || phase === "failed" || phase === "cancelled") && (
+                        <div className="flex items-center gap-2">
+                          {streaming ? (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-8 gap-1.5 text-xs"
+                              disabled={busy}
+                              onClick={cancelRun}
+                            >
+                              <Square className="h-3.5 w-3.5" /> 停止生成
+                            </Button>
+                          ) : (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-8 gap-1.5 text-xs"
+                              disabled={busy}
+                              onClick={retryRun}
+                            >
+                              <RotateCcw className="h-3.5 w-3.5" /> 重试本次任务
+                            </Button>
+                          )}
                         </div>
                       )}
 

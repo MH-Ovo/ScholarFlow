@@ -1,4 +1,4 @@
-import { Eye, Trash2 } from "lucide-react";
+import { Eye, RotateCcw, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { relativeTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -11,11 +11,13 @@ export function DocumentTable({
   highlightedId,
   onPreview,
   onDelete,
+  onRetry,
 }: {
   documents: KbDocument[];
   highlightedId?: number | null;
   onPreview: (doc: KbDocument) => void;
   onDelete: (doc: KbDocument) => void;
+  onRetry: (doc: KbDocument) => void;
 }) {
   return (
     <div className="overflow-x-auto rounded-xl border bg-card">
@@ -72,6 +74,17 @@ export function DocumentTable({
                   >
                     <Eye className="h-3.5 w-3.5" />
                   </Button>
+                  {d.status === "failed" && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 text-muted-foreground"
+                      title="重新解析"
+                      onClick={() => onRetry(d)}
+                    >
+                      <RotateCcw className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
                   <Button
                     variant="ghost"
                     size="icon"

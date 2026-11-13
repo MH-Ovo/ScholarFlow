@@ -4,8 +4,10 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
-from app.api.v1 import analytics, documents, research, sources
+from app.api.v1 import analytics, auth, documents, research, sources
+from app.core.auth import resolve_request
 from app.core.config import get_settings
 from app.db.init_db import init_db
 from app.llm.gateway import get_llm
@@ -16,16 +18,33 @@ settings = get_settings()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
-    await _recover_stale_tasks()
+    if not settings.auth_enabled:
+        print("[kra][auth] 警告：AUTH_ENABLED=false，所有接口无鉴权（仅限本机临时使用）")
+    elif not settings.api_keys.strip() and not settings.auth_localhost_bypass:
+        raise RuntimeError(
+            "AUTH_ENABLED=true 且 AUTH_LOCALHOST_BYPASS=false，但 API_KEYS 为空；"
+            "请配置至少一个 key:tenant:user"
+        )
+    from app.agents.events import EVENT_BUS
+    from app.services import research_service
+
+    await EVENT_BUS.start()
+    await research_service.recover_tasks()
+    await research_service.start_workers()
     llm = get_llm()
     print(
         f"[kra] LLM mode = {llm.mode} | WebSearch = "
         f"{'deepseek' if settings.llm_enabled else 'mock'}"
     )
-    asyncio.create_task(_warmup_models())
+    if settings.warmup_models:
+        asyncio.create_task(_warmup_models())
     if settings.cnki_enabled and (getattr(settings, "cnki_mode", "auto") or "auto").strip().lower() != "fallback":
         asyncio.create_task(_warmup_cnki())
-    yield
+    try:
+        yield
+    finally:
+        await research_service.stop_workers()
+        await EVENT_BUS.stop()
 
 
 async def _warmup_cnki() -> None:
@@ -70,26 +89,28 @@ async def _warmup_models() -> None:
         print(f"[kra] 模型预热跳过：{type(exc).__name__}: {exc}", flush=True)
 
 
-async def _recover_stale_tasks() -> None:
-    """服务重启后：把遗留 running 任务标记为 failed（避免历史任务永远'处理中'）。"""
-    from sqlalchemy import select, update
-
-    from app.db.session import SessionLocal
-    from app.models.research import ResearchTask
-
-    async with SessionLocal() as db:
-        stale = (
-            await db.execute(select(ResearchTask).where(ResearchTask.status == "running"))
-        ).scalars().all()
-        for t in stale:
-            t.status = "failed"
-            t.stats_json = {**(t.stats_json or {}), "interrupted": "服务重启中断"}
-        if stale:
-            await db.commit()
-            print(f"[kra] 已清理 {len(stale)} 个遗留 running 任务")
 
 
 app = FastAPI(title="Knowledge Research Agent API", version="0.1.0", lifespan=lifespan)
+
+_PUBLIC_PATHS = {"/health", "/docs", "/redoc", "/openapi.json", "/api/v1/auth/login"}
+
+
+@app.middleware("http")
+async def _auth_middleware(request, call_next):
+    path = request.url.path
+    if request.method == "OPTIONS" or path in _PUBLIC_PATHS or not path.startswith("/api/v1"):
+        return await call_next(request)
+    principal = resolve_request(request)
+    if principal is None:
+        return JSONResponse(
+            status_code=401,
+            content={"detail": "未认证：请在 Authorization 中提供 Bearer token 或 X-API-Key"},
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    request.state.principal = principal
+    return await call_next(request)
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -99,6 +120,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(auth.router, prefix="/api/v1")
 app.include_router(research.router, prefix="/api/v1")
 app.include_router(sources.router, prefix="/api/v1")
 app.include_router(analytics.router, prefix="/api/v1")

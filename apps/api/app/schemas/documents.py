@@ -14,6 +14,7 @@ class DocumentOut(BaseModel):
 
 
 class UploadItemOut(BaseModel):
+    duplicate: bool = False
     id: int
     name: str
     doc_type: str

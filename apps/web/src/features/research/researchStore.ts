@@ -21,7 +21,7 @@ const DEFAULT_STEPS: StepInfo[] = [
   { step_key: "report_write", label: "生成分析报告", order_index: 5, status: "pending", meta: {} },
 ];
 
-export type RunPhase = "idle" | "streaming" | "done" | "failed" | "interrupted";
+export type RunPhase = "idle" | "streaming" | "done" | "failed" | "cancelled" | "interrupted";
 
 interface ResearchState {
   taskId: string | null;
@@ -36,6 +36,9 @@ interface ResearchState {
   reportTitle: string;
   stats: Partial<RunStats>;
   error: string | null;
+  degradedStages: { stage: string; reason: string }[];
+  reportDegraded: boolean;
+  reportDegradedReason: string;
   selectedRefNo: number | null;
   messages: ChatMessage[]; // 多轮对话历史
   reports: ReportInfo[]; // 多轮报告历史（version 升序）
@@ -46,6 +49,7 @@ interface ResearchState {
 
   hydrate: (d: TaskDetail) => void;
   beginRun: (taskId: string, query: string, title: string) => void;
+  restartRun: () => void;
   applyEvent: (event: string, data: Record<string, unknown>) => void;
   applySnapshot: (d: TaskDetail, force?: boolean) => void;
   setInterrupted: () => void;
@@ -138,6 +142,13 @@ function timelineText(event: string, data: Record<string, unknown>): { kind: Tim
       const n = typeof stats.sources_count === "number" ? stats.sources_count : 0;
       return { kind: "report_done", text: `报告生成完成（基于 ${n} 条来源）` };
     }
+    case "degraded":
+      return {
+        kind: "degraded",
+        text: `降级：${String(data.stage ?? "未知阶段")}${data.reason ? `（${String(data.reason)}）` : ""}`,
+      };
+    case "cancelled":
+      return { kind: "cancelled", text: "任务已取消" };
     case "error":
       return { kind: "error", text: `流程错误：${String(data.message ?? "未知")}` };
     default:
@@ -192,6 +203,9 @@ export const useResearchStore = create<ResearchState>((set, get) => ({
   reportTitle: "",
   stats: {},
   error: null,
+  degradedStages: [],
+  reportDegraded: false,
+  reportDegradedReason: "",
   selectedRefNo: null,
   messages: [],
   reports: [],
@@ -201,7 +215,7 @@ export const useResearchStore = create<ResearchState>((set, get) => ({
   timeline: [],
 
   hydrate: (d) => {
-    const running = d.status === "running";
+    const running = d.status === "queued" || d.status === "running";
     // 失败任务恢复真实错误原因（后端 on_error 持久化在 stats_json.error）
     const statsAny = (d.stats ?? {}) as Record<string, unknown>;
     const savedError = typeof statsAny.error === "string" ? statsAny.error : null;
@@ -209,7 +223,13 @@ export const useResearchStore = create<ResearchState>((set, get) => ({
       taskId: d.id,
       title: d.title,
       query: d.query,
-      phase: running ? "streaming" : d.status === "done" ? "done" : "failed",
+      phase: running
+        ? "streaming"
+        : d.status === "done"
+          ? "done"
+          : d.status === "cancelled"
+            ? "cancelled"
+            : "failed",
       runNonce: get().runNonce + 1,
       steps: d.steps.length ? d.steps : cloneSteps(),
       sources: d.sources,
@@ -218,6 +238,16 @@ export const useResearchStore = create<ResearchState>((set, get) => ({
       reportTitle: d.report?.title ?? "",
       stats: d.stats,
       error: savedError,
+      degradedStages: Array.isArray(statsAny.degraded_stages)
+        ? (statsAny.degraded_stages as string[]).map((stage) => ({
+            stage,
+            reason: String((statsAny.degraded_reasons as Record<string, string>)?.[stage] ?? ""),
+          }))
+        : [],
+      reportDegraded: Boolean(d.report?.degraded ?? statsAny.report_degraded),
+      reportDegradedReason: String(
+        d.report?.degraded_reason ?? statsAny.report_degraded_reason ?? "",
+      ),
       selectedRefNo: null,
       messages: d.messages,
       reports: d.reports ?? [],
@@ -243,6 +273,9 @@ export const useResearchStore = create<ResearchState>((set, get) => ({
       reportTitle: "",
       stats: {},
       error: null,
+      degradedStages: [],
+      reportDegraded: false,
+      reportDegradedReason: "",
       selectedRefNo: null,
       messages,
       snapshotLocked: true, // 本轮报告只能来自 SSE 流式，禁止快照覆盖
@@ -251,6 +284,29 @@ export const useResearchStore = create<ResearchState>((set, get) => ({
       timeline: [{ id: ++timelineSeq, ts: Date.now(), kind: "router", text: "新问题已提交，开始研究" }],
     });
   },
+
+  restartRun: () =>
+    set({
+      phase: "streaming",
+      runNonce: get().runNonce + 1,
+      steps: cloneSteps(),
+      sources: [],
+      graph: { nodes: [], edges: [] },
+      reportBuffer: "",
+      reportTitle: "",
+      stats: {},
+      error: null,
+      degradedStages: [],
+      reportDegraded: false,
+      reportDegradedReason: "",
+      selectedRefNo: null,
+      snapshotLocked: true,
+      draftDone: false,
+      replaying: false,
+      timeline: [
+        { id: ++timelineSeq, ts: Date.now(), kind: "router", text: "任务已重新排队" },
+      ],
+    }),
 
   applyEvent: (event, data) => {
     // 时间线：重放期间（重连/刷新后的历史回放）不入列，避免重复条目
@@ -353,6 +409,21 @@ export const useResearchStore = create<ResearchState>((set, get) => ({
         if (get().replaying) set({ replaying: false });
         break;
       }
+      case "degraded": {
+        const stage = String(data.stage ?? "unknown");
+        const reason = String(data.reason ?? "");
+        const exists = state.degradedStages.some((x) => x.stage === stage);
+        set({
+          degradedStages: exists
+            ? state.degradedStages
+            : [...state.degradedStages, { stage, reason }],
+        });
+        break;
+      }
+      case "cancelled": {
+        set({ phase: "cancelled", error: String(data.message ?? "任务已取消") });
+        break;
+      }
       case "report_completed": {
         // 完整文本 = 已显示 + 待显示（取最新值——顶部捕获的 state 是旧快照，曾致入库缺尾段）。
         // 显示侧不打断打字机：pending 继续自然打完，完成事件只落元数据/版本
@@ -371,6 +442,12 @@ export const useResearchStore = create<ResearchState>((set, get) => ({
           phase: "done",
           reportTitle: String(data.title ?? ""),
           stats: (data.stats as RunStats) ?? {},
+          reportDegraded: Boolean(data.degraded ?? (data.stats as RunStats)?.report_degraded),
+          reportDegradedReason: String(
+            data.degraded_reason ??
+              (data.stats as RunStats)?.report_degraded_reason ??
+              "",
+          ),
           reports: already ? state.reports : [...state.reports, newReport],
           snapshotLocked: false,
           draftDone: true,
@@ -414,6 +491,8 @@ export const useResearchStore = create<ResearchState>((set, get) => ({
       reportBuffer: applyReport && d.report?.markdown ? d.report.markdown : state.reportBuffer,
       reportTitle: d.report?.title ?? state.reportTitle,
       stats: d.stats ?? state.stats,
+      reportDegraded: Boolean(d.report?.degraded ?? state.reportDegraded),
+      reportDegradedReason: String(d.report?.degraded_reason ?? state.reportDegradedReason),
       sources: d.sources.length ? d.sources : state.sources,
       messages: d.messages.length ? d.messages : state.messages,
       reports: d.reports?.length ? d.reports : state.reports,

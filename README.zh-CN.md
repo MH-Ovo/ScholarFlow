@@ -118,6 +118,19 @@ npm run dev
 
 左侧 **Knowledge Base** 页上传 PDF/DOCX/MD/TXT（≤100MB/个，默认值可调），系统自动完成解析 → 切片 → 向量化。
 
+### 7. 认证、任务队列与数据库迁移（P0）
+
+- **认证**：`API_KEYS` 格式为 `key:tenant:user`，逗号分隔；前端首次访问时输入任意 key 换取 HMAC token。
+  本机回环默认放行（`AUTH_LOCALHOST_BYPASS=true`），**反向代理/公网部署必须设为 false**，否则代理后的请求会被误判为本机。
+- **租户隔离**：任务、文档、报告、来源、统计、Qdrant payload 都带 `tenant_id`；旧数据启动时自动回填为 `default`。
+- **任务队列**：任务先写 `research_tasks(status=queued)`，由进程内 worker 原子领取；服务重启会把未超时的 running 任务重新排队。
+  事件写入 `task_events`，SSE 按 `(task_id, id)` 轮询，多 worker/多副本可以服务同一个任务；`RESEARCH_WORKER_COUNT=0` 可只读启动。
+- **迁移**：启动时执行 Alembic；旧 SQLite 库会先幂等补列再 `stamp 0001`，140 篇知识库不需要重建。
+- **上传安全**：1MB 分块落盘、PDF/DOCX magic bytes 校验、租户存储/文档数配额、解析超时与 PDF 页数上限。
+- **降级可见**：Planner/Grader/报告/核查失败会写入 `degraded_stages` 并在报告页显示黄色提示，不再静默用 mock 冒充正常结果。
+- **任务控制**：研究页支持停止生成、失败/取消后重试；Library 支持删除与重试。
+- **质量门禁**：`pytest` + `eval/scripts/ui_smoke.py`（Playwright）进 CI；`eval-nightly.yml` 定时跑 RAGAS 并用 `ragas_gate.py` 拦截回退（需要 self-hosted runner 与已部署服务）。
+
 ## 📊 数据统计口径说明
 
 首页右侧面板的数字均为**真实数据的实时统计**（非展示样例）：
@@ -232,10 +245,11 @@ python eval/scripts/eval_run.py --gen 10 --save-baseline
 - [x] Agentic RAG 核心链路（多源 + Self-RAG + 引用溯源）
 - [x] PDF 智能解析（OCR + VLM 图表描述）
 - [x] RAGAS 评估体系 + 稳定基线
-- [ ] 查询路由按源分发（kb / kb+web / kb+paper / 全量）
+- [x] 查询路由按源分发（SendAPI 动态路由）
 - [ ] DOCX 图片提取（复用 OCR/VLM 管线）
 - [ ] 表格结构化（Docling/PP-Structure 评估）
-- [ ] 企业能力：认证（JWT/SSO）、RBAC、审计
+- [x] 企业能力：API Key 认证、租户隔离、上传配额
+- [ ] 企业能力：JWT/SSO、RBAC、审计日志
 - [ ] 生产化：PostgreSQL / Redis Pub-Sub / Celery
-- [x] CI（GitHub Actions：后端编译检查 + 前端 lint/build）
-- [ ] pytest 单元测试套件
+- [x] CI（后端编译 + pytest + 前端 lint/build + Playwright 冒烟）
+- [x] pytest 单元测试 + Playwright 冒烟 + CI 门禁

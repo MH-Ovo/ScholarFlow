@@ -1,12 +1,15 @@
-"""研究任务路由：创建 / 列表 / 详情 / SSE 流 / 追问 / 导出。"""
+"""研究任务路由：创建 / 列表 / 详情 / SSE 流 / 追问 / 取消 / 重试 / 删除 / 导出。"""
 import asyncio
 import json
+import time
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from fastapi.responses import PlainTextResponse, StreamingResponse
 from sqlalchemy import select
 
 from app.agents.events import EVENT_BUS
+from app.core.auth import Principal, require_principal
+from app.core.config import get_settings
 from app.core.timeutil import fmt_dt
 from app.db.session import SessionLocal
 from app.models.research import Document, Message, Report, ResearchStep, ResearchTask, Source
@@ -21,20 +24,29 @@ from app.schemas.research import (
 from app.services import fulltext_service, research_service
 
 router = APIRouter(prefix="/research", tags=["research"])
+settings = get_settings()
 
 
 def _sse(payload: dict) -> str:
     return f"event: {payload['event']}\ndata: {json.dumps(payload['data'], ensure_ascii=False)}\n\n"
 
 
+async def _task_status(task_id: str) -> str | None:
+    async with SessionLocal() as db:
+        row = await db.get(ResearchTask, task_id)
+    return row.status if row else None
+
+
 @router.post("", response_model=CreateResearchResponse)
-async def create_research(body: CreateResearchRequest):
+async def create_research(
+    body: CreateResearchRequest, principal: Principal = Depends(require_principal)
+):
     query = body.query.strip()
-    # pydantic min_length 校验在 strip 之前，纯空格串会绕过；strip 后复检
     if len(query) < 2:
         raise HTTPException(status_code=422, detail="query 过短")
-    task_id = await research_service.create_task(query, body.lang)
-    research_service.launch(task_id, query, body.lang)
+    task_id = await research_service.create_task(
+        query, body.lang, principal.tenant_id, principal.user_id
+    )
     async with SessionLocal() as db:
         task = await db.get(ResearchTask, task_id)
         title = task.title if task else ""
@@ -42,11 +54,17 @@ async def create_research(body: CreateResearchRequest):
 
 
 @router.get("", response_model=list[TaskSummaryOut])
-async def list_research(limit: int = 20):
+async def list_research(
+    limit: int = 20, principal: Principal = Depends(require_principal)
+):
+    limit = max(1, min(limit, 100))
     async with SessionLocal() as db:
         rows = (
             await db.execute(
-                select(ResearchTask).order_by(ResearchTask.created_at.desc()).limit(limit)
+                select(ResearchTask)
+                .where(ResearchTask.tenant_id == principal.tenant_id)
+                .order_by(ResearchTask.created_at.desc())
+                .limit(limit)
             )
         ).scalars().all()
     return [
@@ -59,10 +77,10 @@ async def list_research(limit: int = 20):
 
 
 @router.get("/{task_id}", response_model=TaskDetailOut)
-async def get_research(task_id: str):
+async def get_research(task_id: str, principal: Principal = Depends(require_principal)):
     async with SessionLocal() as db:
         task = await db.get(ResearchTask, task_id)
-        if task is None:
+        if task is None or task.tenant_id != principal.tenant_id:
             raise HTTPException(status_code=404, detail="task not found")
         steps = (
             await db.execute(
@@ -111,12 +129,14 @@ async def get_research(task_id: str):
         ],
         report=(
             {"id": report.id, "title": report.title, "summary": report.summary,
-             "markdown": report.markdown, "version": report.version}
+             "markdown": report.markdown, "version": report.version,
+             "degraded": report.degraded, "degraded_reason": report.degraded_reason}
             if report else None
         ),
         reports=[
             {"id": r.id, "title": r.title, "summary": r.summary,
-             "markdown": r.markdown, "version": r.version}
+             "markdown": r.markdown, "version": r.version,
+             "degraded": r.degraded, "degraded_reason": r.degraded_reason}
             for r in all_reports
         ],
         graph=task.graph_json or {"nodes": [], "edges": []},
@@ -126,39 +146,46 @@ async def get_research(task_id: str):
 
 
 @router.get("/{task_id}/stream")
-async def stream_research(task_id: str):
-    # 不存在的任务直接 404：否则订阅一个永远不会产出事件的队列，连接只能靠 ping 悬挂
+async def stream_research(task_id: str, principal: Principal = Depends(require_principal)):
     async with SessionLocal() as db:
-        if await db.get(ResearchTask, task_id) is None:
+        task = await db.get(ResearchTask, task_id)
+        if task is None or task.tenant_id != principal.tenant_id:
             raise HTTPException(status_code=404, detail="task not found")
 
     async def event_gen():
-        queue = EVENT_BUS.subscribe(task_id)
-        # 重放协议：历史全量重放（含 report_token），先发 report_reset 让前端清空
-        # 报告缓冲后按序重建——重连/刷新后文本无破洞；重放结束发 replay_end。
-        # （旧方案重放跳过 report_token + 前端快照锁，导致重连前 token 永久缺失、
-        #   流式文本破洞只能靠刷新）
-        history = list(EVENT_BUS.history(task_id))
-        if any(p["event"] == "report_token" for p in history):
+        last_id = 0
+        # 重放协议：历史含 report_token 时先发 report_reset，让前端清空后按序重建
+        if await EVENT_BUS.has_event(task_id, "report_token"):
             yield _sse({"event": "report_reset", "data": {}})
-        seen = {id(p) for p in history}  # 同一 payload 对象引用去重，防重放竞态
-        for payload in history:
-            yield _sse(payload)
-            if payload["event"] == "stream_end":
-                yield _sse({"event": "replay_end", "data": {}})
-                return
-        yield _sse({"event": "replay_end", "data": {}})
+        last_ping = time.monotonic()
         while True:
-            try:
-                payload = await asyncio.wait_for(queue.get(), timeout=30.0)
-            except asyncio.TimeoutError:
-                yield ": ping\n\n"
+            rows = await EVENT_BUS.read_after(task_id, last_id)
+            if rows:
+                for row in rows:
+                    last_id = max(last_id, int(row["id"]))
+                    yield _sse(row)
+                    if row["event"] == "stream_end":
+                        return
+                last_ping = time.monotonic()
                 continue
-            if id(payload) in seen:
-                continue
-            yield _sse(payload)
-            if payload["event"] == "stream_end":
+
+            status = await _task_status(task_id)
+            if status is None:
+                yield _sse({"event": "stream_end", "data": {}})
                 return
+            if status in ("done", "failed", "cancelled"):
+                # 终态但没读到 stream_end：可能是事件尚未落库，给 writer 一个批次时间
+                await asyncio.sleep(0.1)
+                rows = await EVENT_BUS.read_after(task_id, last_id)
+                if rows:
+                    continue
+                yield _sse({"event": "stream_end", "data": {}})
+                return
+
+            if time.monotonic() - last_ping > 15:
+                yield ": ping\n\n"
+                last_ping = time.monotonic()
+            await asyncio.sleep(max(0.05, settings.event_poll_ms / 1000))
 
     return StreamingResponse(
         event_gen(),
@@ -168,30 +195,68 @@ async def stream_research(task_id: str):
 
 
 @router.post("/{task_id}/followup")
-async def followup_research(task_id: str, body: FollowupRequest):
+async def followup_research(
+    task_id: str, body: FollowupRequest, principal: Principal = Depends(require_principal)
+):
     query = body.query.strip()
     if len(query) < 2:
         raise HTTPException(status_code=422, detail="query 过短")
-    result = await research_service.followup(task_id, query, body.lang)
+    result = await research_service.followup(
+        task_id, query, body.lang, principal.tenant_id
+    )
     if result == "not_found":
         raise HTTPException(status_code=404, detail="task not found")
     if result == "running":
-        # 任务仍在流水线中：拒绝并发重跑（否则步骤/来源被双写、SSE 事件交错）
         raise HTTPException(status_code=409, detail="task is still running")
     return {"ok": True}
 
 
-@router.post("/{task_id}/sources/{ref_no}/fulltext", response_model=SourceFulltextOut)
-async def fetch_source_fulltext(task_id: str, ref_no: int, background_tasks: BackgroundTasks):
-    """对知网来源触发全文获取：下载 PDF → 登记文档 → 后台解析入库。
+@router.post("/{task_id}/cancel")
+async def cancel_research(task_id: str, principal: Principal = Depends(require_principal)):
+    result = await research_service.cancel(task_id, principal.tenant_id)
+    if result == "not_found":
+        raise HTTPException(status_code=404, detail="task not found")
+    if result == "not_cancellable":
+        raise HTTPException(status_code=409, detail="task already finished")
+    return {"result": result}
 
-    调研主流程只取摘要；该接口是用户主动触发的独立能力。下载是同步的
-    （实测 13–40 秒），解析/切片/向量化交给后台任务，返回后由前端轮询
-    `GET /documents/{document_id}` 或本接口获取最终状态。
-    """
+
+@router.post("/{task_id}/retry")
+async def retry_research(
+    task_id: str,
+    force: bool = False,
+    principal: Principal = Depends(require_principal),
+):
+    result = await research_service.retry(task_id, principal.tenant_id, force=force)
+    if result == "not_found":
+        raise HTTPException(status_code=404, detail="task not found")
+    if result == "not_retryable":
+        raise HTTPException(status_code=409, detail="only failed/cancelled tasks can retry")
+    if result == "max_attempts":
+        raise HTTPException(status_code=409, detail="max attempts reached")
+    return {"result": result}
+
+
+@router.delete("/{task_id}")
+async def delete_research(task_id: str, principal: Principal = Depends(require_principal)):
+    result = await research_service.delete_task(task_id, principal.tenant_id)
+    if result == "not_found":
+        raise HTTPException(status_code=404, detail="task not found")
+    if result == "running":
+        raise HTTPException(status_code=409, detail="cancel the task before deleting")
+    return {"ok": True}
+
+
+@router.post("/{task_id}/sources/{ref_no}/fulltext", response_model=SourceFulltextOut)
+async def fetch_source_fulltext(
+    task_id: str,
+    ref_no: int,
+    background_tasks: BackgroundTasks,
+    principal: Principal = Depends(require_principal),
+):
     async with SessionLocal() as db:
         task = await db.get(ResearchTask, task_id)
-        if task is None:
+        if task is None or task.tenant_id != principal.tenant_id:
             raise HTTPException(status_code=404, detail="task not found")
         src = (
             await db.execute(
@@ -211,14 +276,13 @@ async def fetch_source_fulltext(task_id: str, ref_no: int, background_tasks: Bac
                 detail="该来源没有 record_ref（可能是站内降级结果），无法下载全文",
             )
 
-        # 已登记过：直接返回当前状态，避免重复下载
         document_id = meta.get("document_id")
         if document_id is not None:
             try:
                 doc = await db.get(Document, int(document_id))
             except (TypeError, ValueError):
                 doc = None
-            if doc is not None:
+            if doc is not None and doc.tenant_id == principal.tenant_id:
                 if doc.status == "indexed":
                     return SourceFulltextOut(
                         state="indexed", document_id=doc.id, document_name=doc.name,
@@ -229,11 +293,13 @@ async def fetch_source_fulltext(task_id: str, ref_no: int, background_tasks: Bac
                         state="in_progress", document_id=doc.id, document_name=doc.name,
                         size_bytes=doc.size_bytes, chunk_count=doc.chunk_count,
                     )
-                # failed → 继续往下走，由 service 清理残留并重试
 
         source_id, title = src.id, src.title
+        tenant_id = task.tenant_id
 
-    result = await fulltext_service.prepare_cnki_document(source_id, record_ref, title)
+    result = await fulltext_service.prepare_cnki_document(
+        source_id, record_ref, title, tenant_id
+    )
     if result["state"] == "pending" and result.get("document_id"):
         background_tasks.add_task(
             fulltext_service.ingest_and_sync, result["document_id"], source_id
@@ -242,8 +308,11 @@ async def fetch_source_fulltext(task_id: str, ref_no: int, background_tasks: Bac
 
 
 @router.get("/{task_id}/export", response_class=PlainTextResponse)
-async def export_research(task_id: str):
+async def export_research(task_id: str, principal: Principal = Depends(require_principal)):
     async with SessionLocal() as db:
+        task = await db.get(ResearchTask, task_id)
+        if task is None or task.tenant_id != principal.tenant_id:
+            raise HTTPException(status_code=404, detail="task not found")
         report = (
             await db.execute(
                 select(Report).where(Report.task_id == task_id).order_by(Report.version.desc())

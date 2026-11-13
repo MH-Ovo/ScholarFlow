@@ -1,7 +1,14 @@
 /** 与后端 API 对齐的 TypeScript 契约 */
 
-export type StepStatus = "pending" | "running" | "done" | "failed" | "paused" | "skipped";
-export type TaskStatus = "running" | "done" | "failed";
+export type StepStatus =
+  | "pending"
+  | "running"
+  | "done"
+  | "failed"
+  | "paused"
+  | "skipped"
+  | "cancelled";
+export type TaskStatus = "queued" | "running" | "done" | "failed" | "cancelled";
 export type SourceType = "enterprise" | "paper" | "web" | "news" | "patent" | "report" | "cnki";
 
 export interface StepInfo {
@@ -72,6 +79,10 @@ export interface RunStats {
   docs_processed: number;
   relevance_avg: number;
   citations_count?: number;
+  degraded_stages?: string[];
+  degraded_reasons?: Record<string, string>;
+  report_degraded?: boolean;
+  report_degraded_reason?: string;
 }
 
 export interface ReportInfo {
@@ -80,6 +91,8 @@ export interface ReportInfo {
   summary: string;
   markdown: string;
   version: number;
+  degraded?: boolean;
+  degraded_reason?: string;
 }
 
 export interface ChatMessage {
@@ -139,6 +152,8 @@ export type TimelineKind =
   | "grade"
   | "rewrite"
   | "report_done"
+  | "degraded"
+  | "cancelled"
   | "error";
 
 export interface TimelineEntry {

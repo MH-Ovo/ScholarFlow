@@ -15,8 +15,10 @@ from qdrant_client.models import (
     Distance,
     FieldCondition,
     Filter,
+    IsEmptyCondition,
     MatchAny,
     MatchValue,
+    PayloadField,
     PointStruct,
     SparseVector,
     SparseVectorParams,
@@ -35,6 +37,7 @@ RRF_K = 60
 class QdrantVectorStore:
     def __init__(self, url: str) -> None:
         self._client = AsyncQdrantClient(url=url, timeout=10.0)
+        self._tenant_ready = False
 
     async def ensure_collection(self) -> None:
         collections = await self._client.get_collections()
@@ -51,6 +54,9 @@ class QdrantVectorStore:
                 await self._create()
         else:
             await self._create()
+        if not self._tenant_ready:
+            await self._backfill_tenant()
+            self._tenant_ready = True
 
     async def _create(self) -> None:
         await self._client.create_collection(
@@ -58,6 +64,40 @@ class QdrantVectorStore:
             vectors_config={"dense": VectorParams(size=VECTOR_SIZE, distance=Distance.COSINE)},
             sparse_vectors_config={"sparse": SparseVectorParams()},
         )
+
+    async def _backfill_tenant(self) -> None:
+        """旧库没有 tenant_id：补成 default，避免升级后全部检索为空。"""
+        from app.core.config import get_settings
+
+        default = get_settings().default_tenant_id
+        missing = Filter(must=[IsEmptyCondition(is_empty=PayloadField(key="tenant_id"))])
+        try:
+            result = await self._client.count(
+                collection_name=COLLECTION, count_filter=missing, exact=True
+            )
+            if not int(result.count):
+                return
+            offset = None
+            while True:
+                points, offset = await self._client.scroll(
+                    collection_name=COLLECTION,
+                    scroll_filter=missing,
+                    limit=256,
+                    with_payload=False,
+                    with_vectors=False,
+                )
+                ids = [p.id for p in points]
+                if ids:
+                    await self._client.set_payload(
+                        collection_name=COLLECTION,
+                        payload={"tenant_id": default},
+                        points=ids,
+                    )
+                if offset is None or not points:
+                    break
+            print(f"[kra][qdrant] 已回填 tenant_id={default}（{result.count} 点）")
+        except Exception as exc:
+            print(f"[kra][qdrant] tenant 回填跳过：{type(exc).__name__}: {exc}")
 
     async def drop(self) -> None:
         try:
@@ -91,6 +131,7 @@ class QdrantVectorStore:
                             "document_id": p["document_id"],
                             "chunk_index": p["chunk_index"],
                             "document_name": p["document_name"],
+                            "tenant_id": p.get("tenant_id") or "default",
                             "text": p["text"][:2000],
                             "parent_text": (p.get("parent_text") or "")[:4000],
                             "page_nos": p.get("page_nos") or [],
@@ -105,8 +146,11 @@ class QdrantVectorStore:
         top_k: int = 10,
         document_id: int | None = None,
         document_ids: list[int] | None = None,
+        tenant_id: str | None = None,
     ) -> list[dict[str, Any]]:
-        return await self._search(vector, "dense", top_k, document_id, document_ids)
+        return await self._search(
+            vector, "dense", top_k, document_id, document_ids, tenant_id
+        )
 
     async def search_sparse(
         self,
@@ -114,8 +158,9 @@ class QdrantVectorStore:
         top_k: int = 10,
         document_id: int | None = None,
         document_ids: list[int] | None = None,
+        tenant_id: str | None = None,
     ) -> list[dict[str, Any]]:
-        query_filter = self._filter(document_id, document_ids)
+        query_filter = self._filter(document_id, document_ids, tenant_id)
         response = await self._client.query_points(
             collection_name=COLLECTION,
             query=SparseVector(indices=sparse["indices"], values=sparse["values"]),
@@ -132,13 +177,14 @@ class QdrantVectorStore:
         top_k: int,
         document_id: int | None,
         document_ids: list[int] | None = None,
+        tenant_id: str | None = None,
     ) -> list[dict[str, Any]]:
         response = await self._client.query_points(
             collection_name=COLLECTION,
             query=vector,
             using=using,
             limit=top_k,
-            query_filter=self._filter(document_id, document_ids),
+            query_filter=self._filter(document_id, document_ids, tenant_id),
         )
         return [self._to_hit(h) for h in response.points]
 
@@ -146,6 +192,7 @@ class QdrantVectorStore:
     def _filter(
         document_id: int | None,
         document_ids: list[int] | None = None,
+        tenant_id: str | None = None,
     ) -> Filter | None:
         """构造文档过滤条件。
 
@@ -153,19 +200,25 @@ class QdrantVectorStore:
         避免中文文档在向量空间里把英文原文整体挤出候选集
         （实测：不限定时英文标注命中 0.500，限定后 1.000）。
         """
-        if document_ids:
-            return Filter(
-                must=[
-                    FieldCondition(
-                        key="document_id", match=MatchAny(any=list(document_ids))
-                    )
-                ]
+        must = []
+        # 默认租户兜底：任何忘了传 tenant 的调用也不会跨租户检索
+        must.append(
+            FieldCondition(
+                key="tenant_id",
+                match=MatchValue(value=tenant_id or settings.default_tenant_id),
             )
-        if document_id is None:
-            return None
-        return Filter(
-            must=[FieldCondition(key="document_id", match=MatchValue(value=document_id))]
         )
+        if document_ids:
+            must.append(
+                FieldCondition(
+                    key="document_id", match=MatchAny(any=list(document_ids))
+                )
+            )
+        elif document_id is not None:
+            must.append(
+                FieldCondition(key="document_id", match=MatchValue(value=document_id))
+            )
+        return Filter(must=must) if must else None
 
     @staticmethod
     def _to_hit(h) -> dict[str, Any]:

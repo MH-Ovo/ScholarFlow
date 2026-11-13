@@ -49,6 +49,7 @@ if (-not (Test-Path (Join-Path $ApiDir ".env"))) {
 
 # ---------- 1. Locate Python ----------
 $pythonCandidates = @(
+    (Join-Path $Root ".venv\Scripts\python.exe"),
     "F:\anaconda\envs\ai-knowledge-assistant-311\python.exe",
     (Join-Path $env:USERPROFILE "anaconda3\python.exe"),
     (Join-Path $env:USERPROFILE "miniconda3\python.exe"),

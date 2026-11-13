@@ -1,28 +1,48 @@
-"""研究任务生命周期：创建 → 后台运行 LangGraph → 追问重跑。"""
+"""研究任务生命周期：持久化队列 → worker 领取 → LangGraph → 取消/重试/删除。
+
+任务状态：queued → running → done / failed / cancelled
+- 队列在 DB（research_tasks.status），进程重启不会丢任务；
+- 多 worker 用单条 UPDATE ... RETURNING 原子领取，不会重复执行；
+- 事件由 EventBus 落 task_events，SSE 直接读库，多 worker 可服务同一任务。
+"""
 import asyncio
 import time
 import uuid
+from datetime import timedelta
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete as sql_delete, select, text
 
 from app.agents import mock_data, nodes
 from app.agents.events import EVENT_BUS
 from app.agents.graph import get_research_graph
 from app.core import trace
+from app.core.config import get_settings
 from app.db.session import SessionLocal
-from app.models.research import STEP_DEFS, Message, ResearchStep, ResearchTask, Source
+from app.models.research import (
+    Citation,
+    Message,
+    Report,
+    ResearchStep,
+    ResearchTask,
+    STEP_DEFS,
+    Source,
+    TaskEvent,
+    utcnow,
+)
 
-# 后台任务强引用：asyncio.create_task 的返回值若无引用，事件循环可能在任务完成前将其 GC
-_BACKGROUND_TASKS: set[asyncio.Task] = set()
+settings = get_settings()
+
+_RUNNING: dict[str, asyncio.Task] = {}
+_WORKERS: list[asyncio.Task] = []
+_SHUTTING_DOWN = False
+_LAST_REAP = 0.0
 
 
-def _spawn(coro) -> None:
-    task = asyncio.create_task(coro)
-    _BACKGROUND_TASKS.add(task)
-    task.add_done_callback(_BACKGROUND_TASKS.discard)
+# ---------------- 创建 / 队列 ----------------
 
-
-async def create_task(query: str, lang: str = "zh") -> str:
+async def create_task(
+    query: str, lang: str = "zh", tenant_id: str = "default", user_id: str = ""
+) -> str:
     topic = mock_data.extract_topic(query)
     task_id = str(uuid.uuid4())
     async with SessionLocal() as db:
@@ -31,11 +51,16 @@ async def create_task(query: str, lang: str = "zh") -> str:
                 id=task_id,
                 title=mock_data.task_title(topic),
                 query=query,
-                status="running",
+                lang=lang,
+                status="queued",
+                tenant_id=tenant_id,
+                user_id=user_id,
+                queued_at=utcnow(),
             )
         )
+        # 先 flush 父行：SQLite 开启 foreign_keys=ON 后，同事务内先插子表会触发 FK 失败
+        await db.flush()
         for idx, (key, label) in enumerate(STEP_DEFS):
-            # 学术/网页检索已恢复；知识图谱构建保持暂停
             status = "paused" if key == "graph_build" else "pending"
             db.add(
                 ResearchStep(
@@ -48,61 +73,413 @@ async def create_task(query: str, lang: str = "zh") -> str:
     return task_id
 
 
-async def _run(task_id: str, query: str, lang: str = "zh") -> None:
-    EVENT_BUS.open(task_id)
-    t0 = time.time()
+async def recover_tasks() -> None:
+    """服务重启：running 任务重新排队；超过最大尝试次数则失败。"""
+    async with SessionLocal() as db:
+        rows = (
+            await db.execute(select(ResearchTask).where(ResearchTask.status == "running"))
+        ).scalars().all()
+        now = utcnow()
+        for row in rows:
+            # 只恢复“本轮生命周期内”遗留的任务；几小时前的 running 说明进程早已异常退出
+            started = row.started_at
+            if started is not None and started.tzinfo is None:
+                from datetime import timezone
+
+                started = started.replace(tzinfo=timezone.utc)
+            stale = (
+                started is None
+                or (now - started).total_seconds() > float(settings.research_task_timeout_sec)
+            )
+            if stale:
+                row.status = "failed"
+                row.error = "服务重启且任务已超过超时时间"
+                row.completed_at = now
+                continue
+            if int(row.attempt or 0) < settings.research_max_attempts:
+                row.status = "queued"
+                row.queued_at = utcnow()
+                row.started_at = None
+                row.cancel_requested = False
+                row.error = "服务重启，已重新排队"
+            else:
+                row.status = "failed"
+                row.error = "服务重启且超过最大重试次数"
+                row.completed_at = utcnow()
+        if rows:
+            await db.commit()
+            print(f"[kra] 已恢复 {len(rows)} 个运行中任务")
+
+
+async def start_workers() -> None:
+    global _SHUTTING_DOWN
+    _SHUTTING_DOWN = False
+    if _WORKERS:
+        return
+    count = max(0, int(settings.research_worker_count))
+    if count == 0:
+        print("[kra] research_worker_count=0，worker 未启动（测试/只读模式）")
+        return
+    for i in range(count):
+        _WORKERS.append(asyncio.create_task(_worker_loop(i)))
+    print(f"[kra] 研究 worker 已启动：{len(_WORKERS)} 个")
+
+
+async def stop_workers() -> None:
+    global _SHUTTING_DOWN
+    _SHUTTING_DOWN = True
+    for worker in _WORKERS:
+        worker.cancel()
+    for worker in _WORKERS:
+        try:
+            await worker
+        except (asyncio.CancelledError, Exception):
+            pass
+    _WORKERS.clear()
+    for run in list(_RUNNING.values()):
+        run.cancel()
+    _RUNNING.clear()
+
+
+async def _worker_loop(index: int) -> None:
+    while True:
+        try:
+            await _maybe_reap()
+        except Exception:
+            pass
+        try:
+            claimed = await _claim()
+        except Exception as exc:  # 队列故障不能杀死 worker
+            print(f"[kra][worker-{index}] claim 失败：{type(exc).__name__}: {exc}")
+            await asyncio.sleep(1.0)
+            continue
+        if claimed is None:
+            await asyncio.sleep(0.5)
+            continue
+        await _run_claimed(claimed)
+
+
+async def _maybe_reap() -> None:
+    """空闲 worker 每 60s 回收一次“进程崩溃后遗留的 running”任务。"""
+    global _LAST_REAP
+    now = time.monotonic()
+    if now - _LAST_REAP < 60:
+        return
+    _LAST_REAP = now
+    cutoff = utcnow() - timedelta(
+        seconds=float(settings.research_task_timeout_sec)
+    )
+    async with SessionLocal() as db:
+        rows = (
+            await db.execute(
+                select(ResearchTask).where(
+                    ResearchTask.status == "running",
+                    ResearchTask.started_at.is_not(None),
+                    ResearchTask.started_at < cutoff,
+                )
+            )
+        ).scalars().all()
+        for row in rows:
+            if row.cancel_requested:
+                row.status = "cancelled"
+                row.error = "取消请求超时"
+                row.completed_at = utcnow()
+            elif int(row.attempt or 0) < settings.research_max_attempts:
+                row.status = "queued"
+                row.queued_at = utcnow()
+                row.started_at = None
+                row.error = "worker 心跳超时，已重新排队"
+            else:
+                row.status = "failed"
+                row.error = "worker 心跳超时且超过最大重试次数"
+                row.completed_at = utcnow()
+        if rows:
+            await db.commit()
+
+
+async def _claim() -> dict | None:
+    async with SessionLocal() as db:
+        row = (
+            await db.execute(
+                text(
+                    """
+                    UPDATE research_tasks
+                    SET status = 'running',
+                        started_at = :now,
+                        attempt = attempt + 1,
+                        error = ''
+                    WHERE id = (
+                        SELECT id FROM research_tasks
+                        WHERE status = 'queued'
+                        ORDER BY COALESCE(queued_at, created_at) ASC
+                        LIMIT 1
+                    )
+                    RETURNING id, query, lang, tenant_id, user_id, attempt
+                    """
+                ),
+                {"now": utcnow()},
+            )
+        ).mappings().first()
+        await db.commit()
+    return dict(row) if row else None
+
+
+# ---------------- 执行 ----------------
+
+async def _run_claimed(row: dict) -> None:
+    task_id = row["id"]
     token = trace.set_task(task_id)
+    started = time.time()
     status = "done"
+    EVENT_BUS.emit(task_id, "task_started", {"attempt": row.get("attempt", 1)})
     try:
         graph = get_research_graph()
-        await graph.ainvoke(
-            {
-                "task_id": task_id,
-                "query": query,
-                "original_query": query,
-                "lang": lang,
-                "metrics": {"t0": t0},
-                "errors": [],
-            }
+        run = asyncio.create_task(
+            graph.ainvoke(
+                {
+                    "task_id": task_id,
+                    "query": row["query"],
+                    "original_query": row["query"],
+                    "lang": row.get("lang") or "zh",
+                    "tenant_id": row.get("tenant_id") or settings.default_tenant_id,
+                    "metrics": {"t0": started},
+                    "errors": [],
+                }
+            )
         )
-    except Exception as exc:  # 任何节点异常都不中断 SSE，转为 error 事件
-        status = "error"
-        await nodes.on_error(task_id, f"{type(exc).__name__}: {exc}")
+        _RUNNING[task_id] = run
+        await _supervise(run, task_id)
+    except asyncio.CancelledError:
+        if _SHUTTING_DOWN:
+            # 服务优雅关闭：重新排队，下次启动继续（不是用户取消）
+            status = "queued"
+            await _requeue_on_shutdown(task_id)
+        else:
+            status = "cancelled"
+            await _finish(task_id, "cancelled", "用户取消")
+            await _close_steps(task_id, "cancelled")
+            EVENT_BUS.emit(task_id, "cancelled", {"message": "任务已取消"})
+    except asyncio.TimeoutError:
+        status = "failed"
+        message = f"任务超时（>{int(settings.research_task_timeout_sec)}s）"
+        await _finish(task_id, "failed", message)
+        await _close_steps(task_id, "failed", message)
+        await nodes.on_error(task_id, message)
+    except Exception as exc:  # 任何节点异常都收敛为失败任务，不中断 worker
+        status = "failed"
+        message = f"{type(exc).__name__}: {exc}"
+        await _finish(task_id, "failed", message)
+        await _close_steps(task_id, "failed", message)
+        await nodes.on_error(task_id, message)
     finally:
-        trace.record_task(task_id, status, query, (time.time() - t0) * 1000)
+        run = _RUNNING.pop(task_id, None)
+        if run is not None and not run.done():
+            run.cancel()
+            try:
+                await asyncio.gather(run, return_exceptions=True)
+            except asyncio.CancelledError:
+                pass
+        trace.record_task(task_id, status, row["query"], (time.time() - started) * 1000)
         trace.reset_task(token)
-        EVENT_BUS.emit(task_id, "stream_end", {})
+        if not _SHUTTING_DOWN:
+            EVENT_BUS.emit(task_id, "stream_end", {})
+        await _ensure_terminal(task_id, status)
 
 
-def launch(task_id: str, query: str, lang: str = "zh") -> None:
-    _spawn(_run(task_id, query, lang))
+async def _supervise(run: asyncio.Task, task_id: str) -> None:
+    deadline = time.monotonic() + float(settings.research_task_timeout_sec)
+    while True:
+        done, _ = await asyncio.wait({run}, timeout=1.0)
+        if done:
+            return run.result()
+        if time.monotonic() > deadline:
+            run.cancel()
+            await asyncio.gather(run, return_exceptions=True)
+            raise asyncio.TimeoutError
+        async with SessionLocal() as db:
+            row = await db.get(ResearchTask, task_id)
+            if row is not None and row.cancel_requested:
+                run.cancel()
+                await asyncio.gather(run, return_exceptions=True)
+                raise asyncio.CancelledError
 
 
-async def followup(task_id: str, query: str, lang: str = "zh") -> str:
-    """追问：追加用户消息，重置步骤/来源，按新问题重跑流水线。
+async def _finish(task_id: str, status: str, error: str = "") -> None:
+    async with SessionLocal() as db:
+        row = await db.get(ResearchTask, task_id)
+        if row is None:
+            return
+        row.status = status
+        row.error = error[:2000]
+        row.completed_at = utcnow()
+        if error:
+            row.stats_json = {**(row.stats_json or {}), "error": error}
+        await db.commit()
 
-    返回 "ok" | "not_found" | "running"（running 时拒绝，避免同一任务双流水线并发写）。
+
+async def _requeue_on_shutdown(task_id: str) -> None:
+    async with SessionLocal() as db:
+        row = await db.get(ResearchTask, task_id)
+        if row is None:
+            return
+        row.status = "queued"
+        row.queued_at = utcnow()
+        row.started_at = None
+        row.cancel_requested = False
+        row.error = "服务关闭，已重新排队"
+        await db.commit()
+    await _close_steps(task_id, "pending", "服务关闭，待重新执行")
+
+
+async def _ensure_terminal(task_id: str, status: str) -> None:
+    """graph 正常返回但没落状态（例如 chat 早退）时补 done。"""
+    if status != "done":
+        return
+    async with SessionLocal() as db:
+        row = await db.get(ResearchTask, task_id)
+        if row is not None and row.status == "running":
+            row.status = "done"
+            row.completed_at = row.completed_at or utcnow()
+            await db.commit()
+
+
+async def _close_steps(task_id: str, status: str, error: str = "") -> None:
+    async with SessionLocal() as db:
+        rows = (
+            await db.execute(
+                select(ResearchStep).where(
+                    ResearchStep.task_id == task_id,
+                    ResearchStep.status.in_(["running", "pending"]),
+                )
+            )
+        ).scalars().all()
+        for row in rows:
+            row.status = status
+            row.finished_at = utcnow()
+            row.meta_json = {**(row.meta_json or {}), "error": error} if error else row.meta_json
+            EVENT_BUS.emit(
+                task_id,
+                "step_failed" if status == "failed" else "step_skipped",
+                {"step": row.step_key, "label": row.label, "error": error},
+            )
+        await db.commit()
+
+
+# ---------------- 追问 / 取消 / 重试 / 删除 ----------------
+
+async def followup(
+    task_id: str, query: str, lang: str = "zh", tenant_id: str = "default"
+) -> str:
+    """追问：追加用户消息，重置步骤/来源后重新排队。
+
+    返回 "ok" | "not_found" | "running"。
     """
     async with SessionLocal() as db:
         task = await db.get(ResearchTask, task_id)
-        if task is None:
+        if task is None or task.tenant_id != tenant_id:
             return "not_found"
-        if task.status == "running":
+        if task.status in ("queued", "running"):
             return "running"
-        task.status = "running"
+        task.status = "queued"
+        task.queued_at = utcnow()
+        task.started_at = None
+        task.completed_at = None
+        task.cancel_requested = False
+        task.error = ""
+        task.lang = lang
         task.query = query
         db.add(Message(task_id=task_id, role="user", content=query))
         steps = (
             await db.execute(select(ResearchStep).where(ResearchStep.task_id == task_id))
         ).scalars().all()
         for s in steps:
-            # 追问重置时保持图谱步骤 paused
             s.status = "paused" if s.step_key == "graph_build" else "pending"
             s.started_at = None
             s.finished_at = None
             s.meta_json = {}
-        await db.execute(delete(Source).where(Source.task_id == task_id))
+        await db.execute(sql_delete(Source).where(Source.task_id == task_id))
         await db.commit()
-    EVENT_BUS.reset(task_id)
-    _spawn(_run(task_id, query, lang))
+    await EVENT_BUS.reset(task_id)
+    return "ok"
+
+
+async def cancel(task_id: str, tenant_id: str = "default") -> str:
+    """cancelling / cancelled / not_found / not_cancellable"""
+    async with SessionLocal() as db:
+        task = await db.get(ResearchTask, task_id)
+        if task is None or task.tenant_id != tenant_id:
+            return "not_found"
+        if task.status == "queued":
+            task.status = "cancelled"
+            task.completed_at = utcnow()
+            await db.commit()
+            EVENT_BUS.emit(task_id, "cancelled", {"message": "任务已取消"})
+            EVENT_BUS.emit(task_id, "stream_end", {})
+            return "cancelled"
+        if task.status == "running":
+            task.cancel_requested = True
+            await db.commit()
+            return "cancelling"
+        return "not_cancellable"
+
+
+async def retry(
+    task_id: str, tenant_id: str = "default", force: bool = False
+) -> str:
+    """ok / not_found / not_retryable / max_attempts
+
+    force=True 允许对已完成的降级报告重新生成（手动重试）。
+    """
+    async with SessionLocal() as db:
+        task = await db.get(ResearchTask, task_id)
+        if task is None or task.tenant_id != tenant_id:
+            return "not_found"
+        if task.status not in ("failed", "cancelled") and not (
+            force and task.status == "done"
+        ):
+            return "not_retryable"
+        if not force and int(task.attempt or 0) >= settings.research_max_attempts:
+            return "max_attempts"
+        if force:
+            task.attempt = 0
+        task.status = "queued"
+        task.queued_at = utcnow()
+        task.started_at = None
+        task.completed_at = None
+        task.cancel_requested = False
+        task.error = ""
+        steps = (
+            await db.execute(select(ResearchStep).where(ResearchStep.task_id == task_id))
+        ).scalars().all()
+        for s in steps:
+            s.status = "paused" if s.step_key == "graph_build" else "pending"
+            s.started_at = None
+            s.finished_at = None
+            s.meta_json = {}
+        await db.execute(sql_delete(Source).where(Source.task_id == task_id))
+        await db.commit()
+    await EVENT_BUS.reset(task_id)
+    return "ok"
+
+
+async def delete_task(task_id: str, tenant_id: str = "default") -> str:
+    """ok / not_found / running"""
+    async with SessionLocal() as db:
+        task = await db.get(ResearchTask, task_id)
+        if task is None or task.tenant_id != tenant_id:
+            return "not_found"
+        if task.status == "running":
+            return "running"
+        report_ids = (
+            await db.execute(select(Report.id).where(Report.task_id == task_id))
+        ).scalars().all()
+        if report_ids:
+            await db.execute(sql_delete(Citation).where(Citation.report_id.in_(report_ids)))
+        await db.execute(sql_delete(Report).where(Report.task_id == task_id))
+        await db.execute(sql_delete(Source).where(Source.task_id == task_id))
+        await db.execute(sql_delete(ResearchStep).where(ResearchStep.task_id == task_id))
+        await db.execute(sql_delete(Message).where(Message.task_id == task_id))
+        await db.execute(sql_delete(TaskEvent).where(TaskEvent.task_id == task_id))
+        await db.execute(sql_delete(ResearchTask).where(ResearchTask.id == task_id))
+        await db.commit()
     return "ok"

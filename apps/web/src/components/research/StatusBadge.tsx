@@ -24,6 +24,13 @@ export function StatusBadge({ phase }: { phase: RunPhase }) {
       </span>
     );
   }
+  if (phase === "cancelled") {
+    return (
+      <span className="inline-flex items-center rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
+        已取消
+      </span>
+    );
+  }
   if (phase === "interrupted") {
     return (
       <span className="inline-flex items-center rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-medium text-amber-600">

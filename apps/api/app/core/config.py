@@ -124,6 +124,32 @@ class Settings(BaseSettings):
     api_port: int = 8900
     cors_origins: str = "http://localhost:5173"
 
+    # 认证与租户：API Key → (tenant_id, user_id)
+    # API_KEYS 格式：key1:tenant-a:user-a,key2:tenant-b:user-b
+    auth_enabled: bool = True
+    api_keys: str = ""
+    # 本机回环地址免鉴权（本地开发/评测用；生产/反代部署必须设 false）
+    auth_localhost_bypass: bool = False
+    session_secret: str = ""
+    session_ttl_hours: int = 72
+    default_tenant_id: str = "default"
+    default_user_id: str = "local"
+
+    # 启动预热（本地模型/知网 MCP）；测试/E2E 可关闭
+    warmup_models: bool = True
+
+    # 任务队列/事件
+    research_worker_count: int = 1
+    research_task_timeout_sec: float = 600.0
+    research_max_attempts: int = 3
+    event_poll_ms: int = 200
+
+    # 上传配额与解析超时
+    max_tenant_storage_mb: int = 4096
+    max_documents_per_tenant: int = 5000
+    parse_timeout_sec: float = 300.0
+    max_pdf_pages: int = 500
+
     # 评估裁判 LLM（仅 eval_run.py 的 ragas 评分使用，与被测系统解耦）。
     # 留空回退 DeepSeek 主配置；可指向任意 OpenAI 兼容端点（如 Ollama 本地模型）省钱。
     eval_judge_model: str = ""

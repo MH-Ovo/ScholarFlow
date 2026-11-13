@@ -5,6 +5,7 @@
 - 无 LLM Key 时报告改为真实片段关键句摘录（带 [n] 标签，零编造）
 """
 import asyncio
+import hashlib
 import re
 import time
 from datetime import datetime, timezone
@@ -134,6 +135,14 @@ def _emit_sources(task_id: str, sources: list[dict]) -> None:
         )
 
 
+def _degraded_metrics(state: ResearchState, stage: str, reason: str) -> dict:
+    """把降级阶段写进 metrics，前端/评测可显式看到，而不是把 mock 当正常输出。"""
+    metrics = dict(state.get("metrics") or {})
+    stages = list(dict.fromkeys([*(metrics.get("degraded_stages") or []), stage]))
+    reasons = {**(metrics.get("degraded_reasons") or {}), stage: reason[:300]}
+    return {**metrics, "degraded_stages": stages, "degraded_reasons": reasons}
+
+
 # ---------------- 意图路由（chat / knowledge） ----------------
 
 async def fanout_node(state: ResearchState) -> dict:
@@ -183,10 +192,19 @@ async def router_node(state: ResearchState) -> dict:
     task_id = state["task_id"]
     query = state.get("original_query") or state["query"]
     llm = get_llm()
-    payload = await llm.extract_json(
+    routed = await llm.extract_json_result(
         ROUTER_PROMPT.format(query=query), mock_data.mock_route(query)
     )
-    payload = payload if isinstance(payload, dict) else {}
+    payload = routed.data if isinstance(routed.data, dict) else {}
+    metrics = state.get("metrics") or {}
+    if routed.degraded:
+        EVENT_BUS.emit(
+            task_id, "degraded",
+            {"stage": "planner", "reason": routed.reason or "LLM JSON 解析失败，已回退规则"},
+        )
+        metrics = _degraded_metrics(
+            state, "planner", routed.reason or "LLM JSON 解析失败，已回退规则"
+        )
     qtype = payload.get("type") or "knowledge"
     if qtype not in ("chat", "knowledge"):
         qtype = "knowledge"
@@ -226,7 +244,8 @@ async def router_node(state: ResearchState) -> dict:
         if isinstance(q, str) and q.strip() and q.strip() != query
     ][:2] if qtype == "knowledge" else []
     return {"query_type": qtype, "search_mode": search_mode, "plan": plan,
-            "plan_subqueries": plan_subqueries, "escalation": False}
+            "plan_subqueries": plan_subqueries, "escalation": False,
+            "metrics": metrics}
 
 
 # ---------------- 知识库检索（混合检索：bge-m3 dense+sparse 双路 RRF） ----------------
@@ -351,73 +370,60 @@ def _apply_rerank(query: str, cands: list[dict], alpha: float | None = None) -> 
     return cands
 
 
-def _is_chinese(text: str, threshold: float = 0.30) -> bool:
-    """按汉字占比判断语种。只统计字母类字符，避免标点与空格干扰。"""
-    if not text:
-        return True
-    cn = sum(1 for ch in text if "\u4e00" <= ch <= "\u9fff")
-    latin = sum(1 for ch in text if ch.isascii() and ch.isalpha())
-    total = cn + latin
-    return total == 0 or cn / total >= threshold
+async def _apply_rerank_async(
+    query: str, cands: list[dict], alpha: float | None = None
+) -> list[dict]:
+    """精排是 CPU 同步调用，必须丢到线程池，否则会卡住整个事件循环（SSE/健康检查）。"""
+    return await asyncio.to_thread(_apply_rerank, query, cands, alpha)
 
 
-async def _doc_languages() -> dict[int, str]:
-    """采样每个文档的前几个切片，判定其语种。
+def _parent_key(hit: dict) -> tuple:
+    """同一章节的 child 共享 parent_text；外部来源按 url/title 各自唯一。"""
+    # Qdrant payload 里 parent_text 截到 4000；兄弟扩展从 DB 取的是全文，
+    # 不截断会导致同一章节被当成两个 parent。
+    parent = (hit.get("parent_text") or "").strip()[:4000]
+    if parent:
+        # 用 md5 而非内置 hash：跨进程稳定，便于评测复现与调试
+        digest = hashlib.md5(parent.encode("utf-8"), usedforsecurity=False).hexdigest()
+        return ("kb", hit.get("document_id"), digest)
+    if hit.get("type") in (None, "enterprise"):
+        return ("kb", hit.get("document_id"), hit.get("chunk_index"))
+    return ("src", hit.get("type"), hit.get("url") or hit.get("title") or "")
 
-    用于语言感知检索：知识库里中英文混排时，英文问题会被中文文档在向量空间里
-    整体挤掉（实测英文 30 条召回 0.500，限定英文文档后 1.000）。
+
+def _pick_parent_diverse(cands: list[dict], limit: int) -> list[dict]:
+    """最终来源窗口按 parent 去重：同章节只留最高分切片，剩余名额再补位。
+
+    动机：12 条来源里曾有 2-7 条共享同一 parent_text，报告上下文重复喂同一章节，
+    白白占掉 token 与来源名额（140 篇评测实测平均只有 9.07 个不同正文）。
+    先保证每个名额都是新内容，候选耗尽后才允许重复 parent 补位。
     """
-    from sqlalchemy import text as sql_text
-
-    from app.db.session import SessionLocal
-
-    try:
-        async with SessionLocal() as db:
-            rows = (
-                await db.execute(
-                    sql_text(
-                        "select document_id, group_concat(text, ' ') as sample from "
-                        "(select document_id, text from document_chunks where chunk_index < 3) "
-                        "group by document_id"
-                    )
-                )
-            ).all()
-    except Exception:
-        return {}
-
-    return {int(doc_id): ("zh" if _is_chinese(sample or "") else "en") for doc_id, sample in rows}
-
-
-def _merge_by_rrf(a: list[dict], b: list[dict], k: int = 60) -> list[dict]:
-    """按 RRF 合并两个候选列表（同语言结果优先：a 在前，等分时 a 靠前）。"""
-    if not a:
-        return list(b)
-    if not b:
-        return list(a)
-
-    scores: dict[int, float] = {}
-    best: dict[int, dict] = {}
-    for lst in (a, b):
-        for rank, h in enumerate(lst, start=1):
-            cid = h["id"]
-            scores[cid] = scores.get(cid, 0.0) + 1.0 / (k + rank)
-            if cid not in best:
-                best[cid] = h
-
-    merged = []
-    for cid, score in scores.items():
-        h = dict(best[cid])
-        h["rrf_multi"] = round(score, 6)
-        merged.append(h)
-    merged.sort(key=lambda x: x["rrf_multi"], reverse=True)
-    return merged
+    if limit <= 0:
+        return []
+    chosen: list[dict] = []
+    seen: set[tuple] = set()
+    rest: list[dict] = []
+    for h in cands:
+        key = _parent_key(h)
+        if key in seen:
+            rest.append(h)
+            continue
+        seen.add(key)
+        chosen.append(h)
+        if len(chosen) >= limit:
+            return chosen
+    chosen.extend(rest[: max(0, limit - len(chosen))])
+    return chosen
 
 
 async def _hybrid_search(
     store, dense_text: str, sparse_text: str | None, top_k: int = 20,
     min_score: float | None = None, relax_min_score: float | None = None,
     document_ids: list[int] | None = None,
+    tenant_id: str | None = None,
     dense_weight: float = 1.0, sparse_weight: float = 1.0,
+    dense_vec: list[float] | None = None,
+    sparse_vec: dict | None = None,
 ) -> list[dict]:
     """双路混合检索：dense 用简洁文本，sparse 用关键词文本；返回 RRF 融合候选。
 
@@ -429,22 +435,21 @@ async def _hybrid_search(
     """
     from app.rag.models import encode_hybrid, get_embedder
 
-    dense_vec = None
-    sparse_vec = None
-    if dense_text == sparse_text:
-        # 同一文本：一次编码取两路
-        dense_res = await asyncio.to_thread(encode_hybrid, [dense_text])
-        if dense_res[0] is not None:
-            dense_vec = dense_res[0][0]
-            if settings.hybrid_search and dense_res[1]:
-                sparse_vec = dense_res[1][0]
-    else:
-        dense_res = await asyncio.to_thread(encode_hybrid, [dense_text])
-        if dense_res[0] is not None:
-            dense_vec = dense_res[0][0]
-            if settings.hybrid_search and sparse_text:
-                sparse_res = await asyncio.to_thread(encode_hybrid, [sparse_text])
-                sparse_vec = sparse_res[1][0] if sparse_res[1] else None
+    if dense_vec is None:
+        if dense_text == sparse_text:
+            # 同一文本：一次编码取两路
+            dense_res = await asyncio.to_thread(encode_hybrid, [dense_text])
+            if dense_res[0] is not None:
+                dense_vec = dense_res[0][0]
+                if settings.hybrid_search and dense_res[1]:
+                    sparse_vec = dense_res[1][0]
+        else:
+            dense_res = await asyncio.to_thread(encode_hybrid, [dense_text])
+            if dense_res[0] is not None:
+                dense_vec = dense_res[0][0]
+                if settings.hybrid_search and sparse_text:
+                    sparse_res = await asyncio.to_thread(encode_hybrid, [sparse_text])
+                    sparse_vec = sparse_res[1][0] if sparse_res[1] else None
     if dense_vec is None:
         # bge3 不可用 → 降级纯 dense
         embedder = get_embedder()
@@ -458,9 +463,13 @@ async def _hybrid_search(
             )[0]
     if dense_vec is None:
         return []
-    dense_hits = await store.search_dense(dense_vec, top_k=top_k, document_ids=document_ids)
+    dense_hits = await store.search_dense(
+        dense_vec, top_k=top_k, document_ids=document_ids, tenant_id=tenant_id
+    )
     sparse_hits = (
-        await store.search_sparse(sparse_vec, top_k=top_k, document_ids=document_ids)
+        await store.search_sparse(
+            sparse_vec, top_k=top_k, document_ids=document_ids, tenant_id=tenant_id
+        )
         if settings.hybrid_search and sparse_vec is not None
         else []
     )
@@ -478,6 +487,7 @@ async def _multi_query_search(
     min_score: float | None = None, relax_min_score: float | None = None,
     document_ids: list[int] | None = None,
     weights: list[float] | None = None,
+    tenant_id: str | None = None,
 ) -> list[dict]:
     """多查询检索：每路各自 hybrid 检索，再跨查询 RRF 合并（按 chunk id 去重）。
 
@@ -488,17 +498,47 @@ async def _multi_query_search(
     等权合并会被措辞不同的子查询稀释（实测召回 0.700 → 0.650），所以生产路径
     把主查询权重调高。
     """
+    from app.rag.models import encode_hybrid
     from app.rag.vector_store import RRF_K
 
-    weighted: list[tuple[list[dict], float]] = []
-    for idx, (dense_text, sparse_text) in enumerate(query_pairs):
-        if not dense_text:
-            continue
-        res = await _hybrid_search(
+    # 批编码：5 路查询逐条 encode 是检索阶段的主要耗时（CPU 单条 ~1.5-3s）。
+    # 一次 batch 前向把所有变体编完，再并发检索。
+    active = [(i, p) for i, p in enumerate(query_pairs) if p[0]]
+    vectors: dict[int, tuple[list[float] | None, dict | None]] = {}
+    if len(active) > 1:
+        dense_list, sparse_list = await asyncio.to_thread(
+            encode_hybrid, [p[0] for _, p in active]
+        )
+        if dense_list:
+            for pos, (idx, pair) in enumerate(active):
+                sparse_vec = None
+                if sparse_list and (pair[1] is None or pair[1] == pair[0]):
+                    sparse_vec = sparse_list[pos]
+                vectors[idx] = (dense_list[pos], sparse_vec)
+
+    async def _run(idx: int, dense_text: str, sparse_text: str | None) -> list[dict]:
+        dv, sv = vectors.get(idx, (None, None))
+        return await _hybrid_search(
             store, dense_text, sparse_text, top_k=top_k,
             min_score=min_score, relax_min_score=relax_min_score,
-            document_ids=document_ids,
+            document_ids=document_ids, tenant_id=tenant_id,
+            dense_vec=dv, sparse_vec=sv,
         )
+
+    indexed = [
+        (idx, dense_text, sparse_text)
+        for idx, (dense_text, sparse_text) in enumerate(query_pairs)
+        if dense_text
+    ]
+    if len(indexed) > 1:
+        results = await asyncio.gather(*[_run(*job) for job in indexed])
+    elif indexed:
+        results = [await _run(*indexed[0])]
+    else:
+        results = []
+
+    weighted: list[tuple[list[dict], float]] = []
+    for (idx, _, _), res in zip(indexed, results):
         if not res:
             continue
         w = float(weights[idx]) if weights and idx < len(weights) else 1.0
@@ -646,13 +686,21 @@ async def kb_retriever_node(state: ResearchState) -> dict:
     hyde_text = ""
     en_query = ""      # 中文问题的英文重述，用于跨语言检索
     enhanced = False
+    query_degraded_reason = ""
     if not sub_queries and settings.query_processing:
         llm = get_llm()
-        processed = await llm.extract_json(
+        processed_res = await llm.extract_json_result(
             QUERY_PROCESS_PROMPT.format(query=query),
             mock_data.mock_query_process(query),
         )
+        processed = processed_res.data if isinstance(processed_res.data, dict) else {}
         dense_query, sparse_query = _build_enhanced_queries(processed, query)
+        if processed_res.degraded:
+            query_degraded_reason = processed_res.reason or "查询增强失败，已用原问题"
+            EVENT_BUS.emit(
+                task_id, "degraded",
+                {"stage": "query", "reason": query_degraded_reason},
+            )
         enhanced = dense_query != query or sparse_query != query
         if settings.multi_query:
             sub_queries = [
@@ -692,11 +740,15 @@ async def kb_retriever_node(state: ResearchState) -> dict:
                 # 多条中文路累积的分数稀释出窗口（sf15/sf27/sf28/sf30）。
                 weights.append(float(settings.en_query_weight))
             fused = await _multi_query_search(
-                store, query_pairs, top_k=top_k, min_score=min_score, weights=weights
+                store, query_pairs, top_k=top_k, min_score=min_score, weights=weights,
+                tenant_id=state.get("tenant_id"),
             )
             if not fused and (enhanced or sub_queries or hyde_text):
                 # 增强未命中 → 回退原问题直接检索（兜底不劣化）
-                fused = await _hybrid_search(store, query, None, top_k=top_k, min_score=min_score)
+                fused = await _hybrid_search(
+                    store, query, None, top_k=top_k, min_score=min_score,
+                    tenant_id=state.get("tenant_id"),
+                )
             if not fused:
                 kb_status = "no_hits"
             else:
@@ -707,7 +759,7 @@ async def kb_retriever_node(state: ResearchState) -> dict:
                     # 扩展会插入邻居并把原命中挤后；评测路径 production_kb_candidates
                     # 在扩展后重新精排，生产路径此前漏了这一步（sf23 表格切片被挤出 top-12）。
                     if settings.rerank_enabled:
-                        fused = _apply_rerank(query, fused)
+                        fused = await _apply_rerank_async(query, fused)
                         if settings.paged_chunk_boost > 0:
                             for h in fused:
                                 if h.get("page_nos"):
@@ -721,7 +773,7 @@ async def kb_retriever_node(state: ResearchState) -> dict:
                             )
                 # 注：不做单文档配额——A/B 实测配额在精排前挤掉同文档的标注相关片段
                 # （multi_cap_rerank 0.410 vs multi_rerank 0.497）；多样性由 merger 统一精排+标题去重保证
-                for h in fused:
+                for h in _pick_parent_diverse(fused, MAX_KB_SOURCES):
                     doc_id = h["document_id"]
                     results.append(
                         {
@@ -739,8 +791,7 @@ async def kb_retriever_node(state: ResearchState) -> dict:
                             "page_nos": h.get("page_nos") or [],
                         }
                     )
-                    if len(results) >= MAX_KB_SOURCES:
-                        break
+
     except Exception as exc:
         # 兜底可观测：环境故障与代码 bug 都打印 traceback（此前静默吞错导致 KB 空无日志）
         import traceback
@@ -800,7 +851,10 @@ async def kb_retriever_node(state: ResearchState) -> dict:
         "topic": topic,
         "kb_results": results,
         "metrics": {
-            **state.get("metrics", {}),
+            **(
+                _degraded_metrics(state, "query", query_degraded_reason)
+                if query_degraded_reason else (state.get("metrics") or {})
+            ),
             "kb_docs": unique_docs,  # 命中的唯一文档数（真实计数）
         },
     }
@@ -1050,7 +1104,7 @@ async def merger_node(state: ResearchState) -> dict:
 
     # 统一精排：全部候选经 bge-reranker 模型打分（可开关；失败保持原分）
     if settings.rerank_enabled:
-        deduped = _apply_rerank(state.get("query") or "", deduped)
+        deduped = await _apply_rerank_async(state.get("query") or "", deduped)
     deduped.sort(key=lambda x: x.get("relevance", 0.0), reverse=True)
 
     limit = MAX_GRADE_SOURCES
@@ -1058,7 +1112,7 @@ async def merger_node(state: ResearchState) -> dict:
     if any(k in query.lower() for k in ("表格", "table")):
         # 表格题只保留少量高相关切片：表格行集中，缩窗可降低 TPM 压力并减少干扰
         limit = max(1, min(limit, settings.table_report_sources))
-    final = deduped[:limit]
+    final = _pick_parent_diverse(deduped, limit)
     for i, s in enumerate(final, start=1):
         s["ref_no"] = i
 
@@ -1166,15 +1220,17 @@ async def grade_documents_node(state: ResearchState) -> dict:
         {"ref_no": s["ref_no"], "score": s.get("relevance", 0.0), "reason": "启发式相关度"}
         for s in sources
     ]
-    grades = await llm.extract_json(
+    graded = await llm.extract_json_result(
         GRADE_PROMPT.format(
             query=state.get("original_query", ""), count=len(sources),
             items_block=items_block,
         ),
         mock_grades,
     )
-    if not isinstance(grades, list):
-        grades = mock_grades
+    grades = graded.data if isinstance(graded.data, list) else mock_grades
+    if graded.degraded or not isinstance(graded.data, list):
+        reason = graded.reason or "Grader JSON 解析失败，已用启发式分数"
+        EVENT_BUS.emit(task_id, "degraded", {"stage": "grade", "reason": reason})
 
     EVENT_BUS.emit(task_id, "grade_result", {"grades": grades, "query": state.get("query", "")})
 
@@ -1187,11 +1243,21 @@ async def grade_documents_node(state: ResearchState) -> dict:
         route = "rewrite"
     else:
         route = "done"
+    metrics = _grade_metrics(state, route)
+    if graded.degraded or not isinstance(graded.data, list):
+        # 评分降级时不信任启发式高分：优先重查一次，耗尽后如实生成并标记
+        route = "rewrite" if retry_count < 2 else "report"
+        metrics = {
+            **_degraded_metrics(state, "grade", graded.reason or "Grader JSON 解析失败"),
+            "retrieval_rounds": metrics.get("retrieval_rounds"),
+            "invalid_rounds": metrics.get("invalid_rounds"),
+            "last_grade_route": route,
+        }
     return {
         "grade_results": grades,
         "route": route,
         "retry_count": retry_count,
-        "metrics": _grade_metrics(state, route),
+        "metrics": metrics,
     }
 
 
@@ -1206,10 +1272,11 @@ async def rewrite_node(state: ResearchState) -> dict:
         if isinstance(g.get("score"), (int, float)) and g["score"] < 0.5
     ]
     feedback = "\n".join(reasons[:8]) or "检索结果整体不相关"
-    payload = await llm.extract_json(
+    rewrite_res = await llm.extract_json_result(
         REWRITE_PROMPT.format(query=state.get("original_query", ""), feedback=feedback),
         {"rewritten_query": state.get("original_query", "")},
     )
+    payload = rewrite_res.data if isinstance(rewrite_res.data, dict) else {}
     new_query = (payload.get("rewritten_query") or state.get("original_query", "")).strip()
     EVENT_BUS.emit(task_id, "rewrite", {"query": new_query})
     next_retry = state.get("retry_count", 0) + 1
@@ -1230,7 +1297,10 @@ async def rewrite_node(state: ResearchState) -> dict:
         ),
         "search_mode": "multi" if escalation else state.get("search_mode"),
         "metrics": {
-            **metrics,
+            **(
+                _degraded_metrics(state, "rewrite", rewrite_res.reason)
+                if rewrite_res.degraded else metrics
+            ),
             "rewrite_count": int(metrics.get("rewrite_count", 0)) + 1,
         },
     }
@@ -1312,14 +1382,22 @@ async def report_writer_node(state: ResearchState) -> dict:
 
     llm = get_llm()
     lang = state.get("lang", "zh")
+    report_meta: dict = {}
 
     def _build_context_block(srcs: list[dict]) -> str:
         """上下文块：KB 来源优先用章节级 parent 文本（上下文完整），外部来源用 snippet。"""
+        type_labels = {
+            "enterprise": "本地知识库",
+            "paper": "arXiv 论文",
+            "web": "网页",
+            "cnki": "知网",
+        }
         lines = []
         for s in srcs:
             parent = (s.get("meta") or {}).get("parent_text")
             content = parent or s.get("snippet", "")
-            lines.append(f"[{s['ref_no']}] ({s['title']})\n{content}")
+            label = type_labels.get(str(s.get("type")), str(s.get("type") or "未知来源"))
+            lines.append(f"[{s['ref_no']}] ({s['title']}) [来源：{label}]\n{content}")
         return "\n".join(lines)
 
     if not sources:
@@ -1332,10 +1410,18 @@ async def report_writer_node(state: ResearchState) -> dict:
                 else "你好！我是本地知识库助手，有什么可以帮您？"
             )
             parts: list[str] = []
-            async for piece in llm.stream_report(chat_prompt, mock_reply):
+            chat_meta: dict = {}
+            async for piece in llm.stream_report(chat_prompt, mock_reply, chat_meta):
                 parts.append(piece)
                 EVENT_BUS.emit(task_id, "report_token", {"delta": piece})
             report = "".join(parts).strip() or mock_reply
+            if chat_meta.get("degraded"):
+                report_meta["degraded"] = True
+                report_meta["reason"] = chat_meta.get("reason") or "闲聊回复降级"
+                EVENT_BUS.emit(
+                    task_id, "degraded",
+                    {"stage": "report", "reason": report_meta["reason"]},
+                )
         elif lang == "en":
             report = ("No sufficiently relevant content was found in the knowledge base "
                       "and other sources for this question. Please upload related documents "
@@ -1378,12 +1464,19 @@ async def report_writer_node(state: ResearchState) -> dict:
             EVENT_BUS.emit(task_id, "report_token", {"delta": report})
         else:
             parts: list[str] = []
-            async for piece in llm.stream_report(prompt, mock_text):
+            async for piece in llm.stream_report(prompt, mock_text, report_meta):
                 parts.append(piece)
                 EVENT_BUS.emit(task_id, "report_token", {"delta": piece})
             report = "".join(parts).strip()
             if len(report) < 20:
                 report = mock_text
+                report_meta["degraded"] = True
+                report_meta["reason"] = report_meta.get("reason") or "LLM 返回空报告，已用片段摘录"
+            if report_meta.get("degraded"):
+                EVENT_BUS.emit(
+                    task_id, "degraded",
+                    {"stage": "report", "reason": report_meta.get("reason") or "报告生成降级"},
+                )
 
         # 初稿完成：立即翻步骤为已完成 + 通知前端熄灭流式光标——
         # 随后的忠实度核查（~10s 阻塞 LLM 调用）在时间线呈现，
@@ -1406,20 +1499,32 @@ async def report_writer_node(state: ResearchState) -> dict:
                 tail = ((x.get("meta") or {}).get("parent_text") or "")[:500]
                 parts_ctx.append(f"[{x['ref_no']}] {x['title']}\n{head}\n{tail}")
             verify_ctx = "\n\n".join(parts_ctx)
-            verify_payload = await llm.extract_json(
+            verify_res = await llm.extract_json_result(
                 VERIFY_PROMPT.format(
                     query=original_query, answer=report, context_block=verify_ctx
                 ),
                 {"faithfulness": 1.0, "unsupported_claims": [], "pass": True},
             )
-            if isinstance(verify_payload, dict):
+            verify_payload = verify_res.data
+            verify_degraded = verify_res.degraded
+            if verify_degraded:
+                verify_payload = {}
+                EVENT_BUS.emit(
+                    task_id, "degraded",
+                    {"stage": "verify", "reason": verify_res.reason or "答案核查降级，已跳过自动修订"},
+                )
+            else:
                 EVENT_BUS.emit(task_id, "verify_result", {
                     "pass": bool(verify_payload.get("pass")),
                     "faithfulness": verify_payload.get("faithfulness"),
                     "unsupported": len(verify_payload.get("unsupported_claims") or []),
                 })
 
-            if isinstance(verify_payload, dict) and not verify_payload.get("pass"):
+            if (
+                not verify_degraded
+                and isinstance(verify_payload, dict)
+                and not verify_payload.get("pass")
+            ):
                 # 附核查反馈重生成一次
                 claims = verify_payload.get("unsupported_claims") or []
                 fix_note = (
@@ -1436,12 +1541,22 @@ async def report_writer_node(state: ResearchState) -> dict:
                 await _step(task_id, "report_write", "生成分析报告", "running")
                 EVENT_BUS.emit(task_id, "report_revise", {})
                 parts2: list[str] = []
-                async for piece in llm.stream_report(prompt2, mock_text):
+                revise_meta: dict = {}
+                async for piece in llm.stream_report(prompt2, mock_text, revise_meta):
                     parts2.append(piece)
                     EVENT_BUS.emit(task_id, "report_token", {"delta": piece})
                 report2 = "".join(parts2).strip()
                 if len(report2) < 20:
                     report2 = mock_text
+                    revise_meta["degraded"] = True
+                    revise_meta["reason"] = revise_meta.get("reason") or "修订版为空，已用片段摘录"
+                if revise_meta.get("degraded"):
+                    report_meta["degraded"] = True
+                    report_meta["reason"] = revise_meta.get("reason") or "报告修订降级"
+                    EVENT_BUS.emit(
+                        task_id, "degraded",
+                        {"stage": "report", "reason": report_meta["reason"]},
+                    )
                 report = report2
                 report, used_refs = _verify_citations(report, sources)
                 EVENT_BUS.emit(task_id, "report_draft_done", {})
@@ -1460,9 +1575,13 @@ async def report_writer_node(state: ResearchState) -> dict:
             )
         ).scalars().all()
         next_version = (max(prev_versions) if prev_versions else 0) + 1
+        report_degraded = bool(report_meta.get("degraded"))
+        report_reason = str(report_meta.get("reason") or "")[:300]
         db_report = Report(
             task_id=task_id, title=title, summary=summary,
             markdown=report, version=next_version,
+            tenant_id=state.get("tenant_id") or settings.default_tenant_id,
+            degraded=report_degraded, degraded_reason=report_reason,
         )
         db.add(db_report)
         await db.flush()
@@ -1500,6 +1619,10 @@ async def report_writer_node(state: ResearchState) -> dict:
             "scheduled_sources": int(metrics.get("scheduled_sources_total", 0)),
             "scheduled_external_sources": int(metrics.get("scheduled_external_total", 0)),
             "dispatch_mode": metrics.get("dispatch_mode", ""),
+            "degraded_stages": metrics.get("degraded_stages", []),
+            "degraded_reasons": metrics.get("degraded_reasons", {}),
+            "report_degraded": report_degraded,
+            "report_degraded_reason": report_reason,
         }
         task = await db.get(ResearchTask, task_id)
         if task:
@@ -1517,7 +1640,11 @@ async def report_writer_node(state: ResearchState) -> dict:
     EVENT_BUS.emit(
         task_id,
         "report_completed",
-        {"report_id": report_id, "title": title, "stats": stats, "citations": used_refs},
+        {
+            "report_id": report_id, "title": title, "stats": stats,
+            "citations": used_refs, "degraded": report_degraded,
+            "degraded_reason": report_reason,
+        },
     )
     return {"report_md": report, "report_title": title, "metrics": {**metrics, **stats}}
 

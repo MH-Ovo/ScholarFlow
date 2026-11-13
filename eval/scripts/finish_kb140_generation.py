@@ -93,6 +93,14 @@ async def main() -> int:
     parser.add_argument("--timeout", type=float, default=300.0)
     parser.add_argument("--skip-score", action="store_true")
     parser.add_argument(
+        "--force-ids",
+        default="",
+        help="即使 DB 有报告也重跑（用于 429 摘录回退的补跑），逗号分隔",
+    )
+    parser.add_argument("--task-sleep", type=float, default=0.0, help="重跑任务之间的间隔秒数")
+    parser.add_argument("--score-ids", default="", help="只评分这些 id（不重跑任务），逗号分隔")
+    parser.add_argument("--merge-into", default="", help="把本次结果合并回已有 RAGAS JSON")
+    parser.add_argument(
         "--since",
         default="2026-11-11 15:55",
         help="只复用该 UTC 时间之后的任务（默认取 140 篇知识库那轮生成）",
@@ -103,17 +111,24 @@ async def main() -> int:
 
     items = era.load_items(Path(args.dataset))
     from_db = load_from_db(items, args.since)
-    missing = [it for it in items if it["id"] not in from_db]
+    forced = {x.strip() for x in args.force_ids.split(",") if x.strip()}
+    if forced:
+        from_db = {k: v for k, v in from_db.items() if k not in forced}
+    missing = [
+        it for it in items if it["id"] in forced or it["id"] not in from_db
+    ]
     print(
         f"[resume] db={len(from_db)} missing={[x['id'] for x in missing]}",
         flush=True,
     )
 
     samples = [from_db[it["id"]] for it in items if it["id"] in from_db]
-    if missing:
-        samples += await era.run_generation(missing, args.timeout)
-        order = {it["id"]: n for n, it in enumerate(items)}
-        samples.sort(key=lambda x: order.get(x["id"], 999))
+    for n, it in enumerate(missing):
+        samples += await era.run_generation([it], args.timeout)
+        if n < len(missing) - 1:
+            await asyncio.sleep(max(0.0, args.task_sleep))
+    order = {it["id"]: n for n, it in enumerate(items)}
+    samples.sort(key=lambda x: order.get(x["id"], 999))
 
     unanswerable = {it["id"] for it in items if it.get("unanswerable")}
     scorable = [
@@ -125,6 +140,15 @@ async def main() -> int:
         and not (x.get("response") or "").startswith("基于本地知识库的要点")
     ]
     print(f"[resume] samples={len(samples)} scorable={len(scorable)}", flush=True)
+    # 补跑模式（--force-ids）只重评重跑的题；其余样本沿用 --merge-into 里的旧分数。
+    score_ids = {x.strip() for x in args.score_ids.split(",") if x.strip()}
+    if score_ids:
+        score_pool = [x for x in scorable if x["id"] in score_ids]
+    elif forced:
+        score_pool = [x for x in scorable if x["id"] in forced]
+    else:
+        score_pool = scorable
+    print(f"[resume] score_pool={len(score_pool)}", flush=True)
 
     gen = None
     if not args.skip_score:
@@ -133,9 +157,11 @@ async def main() -> int:
         judge_model = get_settings().eval_judge_model or get_settings().chat_model
         print(f"[resume] judge={judge_model}", flush=True)
         gen = era.score_sequential(
-            scorable, [context_recall, faithfulness], judge_model, delay=args.sleep
+            score_pool, [context_recall, faithfulness], judge_model, delay=args.sleep
         )
-        gen["_gen_meta"] = scorable
+        gen["_gen_meta"] = score_pool
+        if args.merge_into:
+            gen = era.merge_generation(args.merge_into, gen)
         print(f"[resume] metrics={gen['aggregate']}", flush=True)
 
     retr = None

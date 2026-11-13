@@ -28,6 +28,8 @@ const KIND_META: Record<TimelineKind, { icon: LucideIcon; cls: string }> = {
   grade: { icon: Gauge, cls: "text-amber-600" },
   rewrite: { icon: RefreshCw, cls: "text-orange-600" },
   report_done: { icon: FileCheck2, cls: "text-emerald-600" },
+  degraded: { icon: AlertCircle, cls: "text-amber-600" },
+  cancelled: { icon: XCircle, cls: "text-muted-foreground" },
   error: { icon: AlertCircle, cls: "text-rose-600" },
 };
 

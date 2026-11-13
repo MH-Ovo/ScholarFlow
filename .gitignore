@@ -43,3 +43,7 @@ apps/api/app/uploads/*
 # 系统
 .DS_Store
 Thumbs.db
+# 认证密钥与迁移临时库
+apps/api/.session_secret
+apps/api/_alembic_tmp.db
+apps/api/_migrate_test.db

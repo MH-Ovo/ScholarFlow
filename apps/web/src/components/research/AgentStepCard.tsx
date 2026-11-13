@@ -77,6 +77,12 @@ export function AgentStepCard({ step, index = 0 }: { step: StepInfo; index?: num
             <span className="text-rose-600">失败</span>
           </>
         )}
+        {step.status === "cancelled" && (
+          <>
+            <XCircle className="h-3.5 w-3.5 text-muted-foreground" />
+            <span className="text-muted-foreground">已取消</span>
+          </>
+        )}
         {step.status === "paused" && (
           <>
             <PauseCircle className="h-3.5 w-3.5 text-muted-foreground/50" />

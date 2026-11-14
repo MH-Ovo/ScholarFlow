@@ -431,13 +431,26 @@ def merge_generation(old_path: str, new_gen: dict) -> dict:
     return new_gen
 
 
-def render_md(tag: str, dataset: str, retr: dict | None, gen: dict | None) -> str:
+def render_md(
+    tag: str,
+    dataset: str,
+    retr: dict | None,
+    gen: dict | None,
+    corpus: dict | None = None,
+) -> str:
     lines = [
         f"# RAGAS 学术集评测（{tag}）",
         "",
         f"> 数据集 {dataset} | 时间 {time.strftime('%Y-%m-%d %H:%M')}",
-        "",
     ]
+    if corpus:
+        summary = corpus.get("summary") or {}
+        lines.append(
+            f"> 语料快照 {corpus.get('digest', '')[:12]} | "
+            f"文档 {summary.get('documents')} | 切片 {summary.get('chunks')} | "
+            f"部分索引 {summary.get('partial')}"
+        )
+    lines.append("")
     if retr:
         a = retr["aggregate"]
         lines += [
@@ -493,6 +506,16 @@ async def main() -> int:
     parser.add_argument("--timeout", type=float, default=300.0)
     parser.add_argument("--task-sleep", type=float, default=0.0, help="生成任务之间的间隔秒数")
     parser.add_argument("--max-retries", type=int, default=2, help="报告降级/失败时的重跑次数")
+    parser.add_argument(
+        "--corpus-manifest",
+        default="",
+        help="语料快照路径：存在则校验，不一致时中止；不存在则自动生成",
+    )
+    parser.add_argument(
+        "--allow-corpus-drift",
+        action="store_true",
+        help="语料与快照不一致时仍继续（结果会记录实际语料摘要）",
+    )
     parser.add_argument("--skip-retrieval", action="store_true")
     parser.add_argument("--skip-generation", action="store_true")
     parser.add_argument(
@@ -501,6 +524,45 @@ async def main() -> int:
         help="复用已有 RAGAS JSON 的 generation.items，只重新评分（避免重跑 30 个任务）",
     )
     args = parser.parse_args()
+
+    # 语料快照：把“这次评测跑在哪份知识库上”固定下来；不指定路径也记录摘要便于归档
+    from corpus_manifest import build_manifest, diff_manifests
+
+    corpus = await build_manifest()
+    corpus_info = {
+        "digest": corpus["digest"],
+        "summary": corpus["summary"],
+        "manifest": None,
+    }
+    if args.corpus_manifest:
+        manifest_path = Path(args.corpus_manifest)
+        if manifest_path.exists():
+            old = json.loads(manifest_path.read_text(encoding="utf-8"))
+            changes = diff_manifests(old, corpus)
+            if changes:
+                print(f"[ragas] 语料与快照不一致（{len(changes)} 处）：", flush=True)
+                for line in changes[:20]:
+                    print(f"  {line}", flush=True)
+                if not args.allow_corpus_drift:
+                    print(
+                        "[ragas] 中止：语料已变化；更新快照或加 --allow-corpus-drift",
+                        flush=True,
+                    )
+                    return 3
+                print("[ragas] --allow-corpus-drift：继续，结果记录实际语料摘要", flush=True)
+        else:
+            manifest_path.parent.mkdir(parents=True, exist_ok=True)
+            manifest_path.write_text(
+                json.dumps(corpus, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+            print(f"[ragas] 语料快照已生成：{manifest_path}", flush=True)
+        corpus_info["manifest"] = str(manifest_path)
+    print(
+        f"[ragas] corpus digest={corpus['digest'][:12]} "
+        f"docs={corpus['summary']['documents']} chunks={corpus['summary']['chunks']} "
+        f"partial={corpus['summary']['partial']}",
+        flush=True,
+    )
 
     dataset = Path(args.dataset)
     items = load_items(dataset)
@@ -642,6 +704,7 @@ async def main() -> int:
             "judge_model": judge_model,
             "judge_model_2": judge2 or None,
             "ts": time.strftime("%Y-%m-%d %H:%M"),
+            "corpus": corpus_info,
         },
         "retrieval": retr,
         "generation": gen,
@@ -649,7 +712,7 @@ async def main() -> int:
     json_path = out_dir / f"ragas_{args.tag}_{ts}.json"
     md_path = out_dir / f"ragas_{args.tag}_{ts}.md"
     json_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-    md_path.write_text(render_md(args.tag, dataset.name, retr, gen), encoding="utf-8")
+    md_path.write_text(render_md(args.tag, dataset.name, retr, gen, corpus_info), encoding="utf-8")
     print(f"[ragas] saved {json_path}", flush=True)
     print(f"[ragas] saved {md_path}", flush=True)
     print("RAGAS_DONE", flush=True)

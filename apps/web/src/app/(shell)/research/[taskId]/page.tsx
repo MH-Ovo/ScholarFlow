@@ -40,6 +40,7 @@ export default function ResearchPage() {
   const messages = useResearchStore((s) => s.messages);
   const reports = useResearchStore((s) => s.reports);
   const headerTitle = useResearchStore((s) => s.reportTitle || s.title);
+  const latestMarkdown = reports.length ? reports[reports.length - 1].markdown : "";
   const error = useResearchStore((s) => s.error);
   const degradedStages = useResearchStore((s) => s.degradedStages);
   const reportDegraded = useResearchStore((s) => s.reportDegraded);
@@ -115,6 +116,7 @@ export default function ResearchPage() {
           title={headerTitle}
           taskId={taskId ?? null}
           canExport={phase === "done"}
+          markdown={latestMarkdown}
         />
 
         <ScrollArea className="min-h-0 flex-1">

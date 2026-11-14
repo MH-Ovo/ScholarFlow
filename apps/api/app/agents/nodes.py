@@ -826,6 +826,12 @@ async def kb_retriever_node(state: ResearchState) -> dict:
 
     # 落库来源（先清旧，支持追问重跑）
     async with SessionLocal() as db:
+        # citation.source_id 有外键：崩溃恢复/重跑时先清理旧 report 的引用
+        report_ids = (
+            await db.execute(select(Report.id).where(Report.task_id == task_id))
+        ).scalars().all()
+        if report_ids:
+            await db.execute(delete(Citation).where(Citation.report_id.in_(report_ids)))
         await db.execute(delete(Source).where(Source.task_id == task_id))
         for s in results:
             db.add(
@@ -1137,6 +1143,11 @@ async def merger_node(state: ResearchState) -> dict:
 
     # 落库（先清旧，支持重检索/追问重跑）
     async with SessionLocal() as db:
+        report_ids = (
+            await db.execute(select(Report.id).where(Report.task_id == task_id))
+        ).scalars().all()
+        if report_ids:
+            await db.execute(delete(Citation).where(Citation.report_id.in_(report_ids)))
         await db.execute(delete(Source).where(Source.task_id == task_id))
         for s in final:
             db.add(
@@ -1441,19 +1452,54 @@ async def report_writer_node(state: ResearchState) -> dict:
     claims_verified = False
 
     def _build_context_block(srcs: list[dict]) -> str:
-        """上下文块：KB 来源优先用章节级 parent 文本（上下文完整），外部来源用 snippet。"""
+        """上下文块：KB 来源优先用章节级 parent 文本（上下文完整），外部来源用 snippet。
+
+        同时标注来源类型、日期与权威性，并按权威性排序；引用编号 [n] 保持原值不变。
+        """
         type_labels = {
             "enterprise": "本地知识库",
             "paper": "arXiv 论文",
             "web": "网页",
             "cnki": "知网",
+            "patent": "专利",
+            "report": "行业报告",
+            "news": "新闻",
         }
+        authority = {
+            "cnki": "高",
+            "patent": "高",
+            "paper": "中高",
+            "enterprise": "中高",
+            "report": "中",
+            "web": "低",
+            "news": "低",
+        }
+        rank = {"高": 3, "中高": 2, "中": 1, "低": 0}
+
+        def _date_of(s: dict) -> str:
+            meta = s.get("meta") or {}
+            for key in ("published", "date", "year"):
+                value = meta.get(key)
+                if value not in (None, "", 0):
+                    return str(value)[:10]
+            return "未知"
+
+        def _authority_of(s: dict) -> str:
+            return authority.get(str(s.get("type")), "低")
+
+        ordered = sorted(
+            srcs,
+            key=lambda s: (-rank.get(_authority_of(s), 0), s["ref_no"]),
+        )
         lines = []
-        for s in srcs:
+        for s in ordered:
             parent = (s.get("meta") or {}).get("parent_text")
             content = parent or s.get("snippet", "")
             label = type_labels.get(str(s.get("type")), str(s.get("type") or "未知来源"))
-            lines.append(f"[{s['ref_no']}] ({s['title']}) [来源：{label}]\n{content}")
+            lines.append(
+                f"[{s['ref_no']}] ({s['title']}) "
+                f"[来源：{label}｜日期：{_date_of(s)}｜权威性：{_authority_of(s)}]\n{content}"
+            )
         return "\n".join(lines)
 
     if not sources:
@@ -1610,6 +1656,7 @@ async def report_writer_node(state: ResearchState) -> dict:
                     parts2.append(piece)
                     EVENT_BUS.emit(task_id, "report_token", {"delta": piece})
                 report2 = "".join(parts2).strip()
+                revised = False
                 if len(report2) < 20 or revise_meta.get("degraded"):
                     # 修订失败保留初稿：初稿可用时不要换成原始摘录，也不把整篇报告标记为降级
                     report2 = report
@@ -1617,10 +1664,38 @@ async def report_writer_node(state: ResearchState) -> dict:
                         task_id, "degraded",
                         {"stage": "revise", "reason": revise_meta.get("reason") or "修订未完成，已保留初稿"},
                     )
+                else:
+                    revised = True
                 report = report2
-                # 修订版未重新核查，旧的不支持列表不再适用于新报告
-                unsupported_claims = []
-                claims_verified = False
+                if revised:
+                    # 修订版必须重新核查，否则 claims.supported 会全部为空，
+                    # 逐句引用面板只能显示“未核查”，等于校验没有落库。
+                    verify2 = await llm.extract_json_result(
+                        VERIFY_PROMPT.format(
+                            query=original_query, answer=report, context_block=verify_ctx
+                        ),
+                        {"faithfulness": 1.0, "unsupported_claims": [], "pass": True},
+                    )
+                    if not verify2.degraded and isinstance(verify2.data, dict):
+                        unsupported_claims = [
+                            str(x)
+                            for x in (verify2.data.get("unsupported_claims") or [])
+                            if str(x).strip()
+                        ]
+                        claims_verified = True
+                        EVENT_BUS.emit(task_id, "verify_result", {
+                            "pass": bool(verify2.data.get("pass")),
+                            "faithfulness": verify2.data.get("faithfulness"),
+                            "unsupported": len(unsupported_claims),
+                            "revised": True,
+                        })
+                    else:
+                        unsupported_claims = []
+                        claims_verified = False
+                        EVENT_BUS.emit(
+                            task_id, "degraded",
+                            {"stage": "verify", "reason": verify2.reason or "修订版核查降级，逐句结果未落库"},
+                        )
                 report, used_refs = _verify_citations(report, sources)
                 EVENT_BUS.emit(task_id, "report_draft_done", {})
                 await _step(task_id, "report_write", "生成分析报告", "done", {"chars": len(report)})

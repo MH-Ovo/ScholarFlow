@@ -138,6 +138,8 @@ class Settings(BaseSettings):
     session_ttl_hours: int = 72
     default_tenant_id: str = "default"
     default_user_id: str = "local"
+    # 只读分享链接有效期（天）
+    share_ttl_days: int = 7
 
     # 启动预热（本地模型/知网 MCP）；测试/E2E 可关闭
     warmup_models: bool = True

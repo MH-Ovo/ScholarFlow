@@ -1,0 +1,1415 @@
+{
+  "version": 1,
+  "created_at": "2026-11-14 11:19:37",
+  "embedding_model": "c:/Users/10970/Desktop/万恶的作业集/实习/2.0/mcp平台/mcp平台/mcp_platform-master/ScholarFlow/models/bge-m3",
+  "collection": "kb_chunks",
+  "summary": {
+    "documents": 140,
+    "indexed": 140,
+    "partial": 0,
+    "chunks": 5429
+  },
+  "documents": [
+    {
+      "id": 1,
+      "name": "handbook.md",
+      "size_bytes": 1328,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 4,
+      "expected_chunks": 4,
+      "is_partial": false
+    },
+    {
+      "id": 2,
+      "name": "whitepaper.txt",
+      "size_bytes": 1232,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 1,
+      "expected_chunks": 1,
+      "is_partial": false
+    },
+    {
+      "id": 3,
+      "name": "rag_original.pdf",
+      "size_bytes": 885323,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 43,
+      "expected_chunks": 43,
+      "is_partial": false
+    },
+    {
+      "id": 4,
+      "name": "rag_survey.pdf",
+      "size_bytes": 1662567,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 65,
+      "expected_chunks": 65,
+      "is_partial": false
+    },
+    {
+      "id": 5,
+      "name": "cjc_rag_survey.pdf",
+      "size_bytes": 2149537,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 146,
+      "expected_chunks": 146,
+      "is_partial": false
+    },
+    {
+      "id": 6,
+      "name": "mc_rag_survey.pdf",
+      "size_bytes": 777718,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 62,
+      "expected_chunks": 62,
+      "is_partial": false
+    },
+    {
+      "id": 7,
+      "name": "hanspub_mdhsg_rag.pdf",
+      "size_bytes": 3885668,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 38,
+      "expected_chunks": 38,
+      "is_partial": false
+    },
+    {
+      "id": 8,
+      "name": "hanspub_opticache_rag.pdf",
+      "size_bytes": 1160811,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 40,
+      "expected_chunks": 40,
+      "is_partial": false
+    },
+    {
+      "id": 9,
+      "name": "hanspub_pv_rag.pdf",
+      "size_bytes": 875931,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 36,
+      "expected_chunks": 36,
+      "is_partial": false
+    },
+    {
+      "id": 10,
+      "name": "cnki_yunguanzhihe_rag.pdf",
+      "size_bytes": 1270648,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 19,
+      "expected_chunks": 19,
+      "is_partial": false
+    },
+    {
+      "id": 11,
+      "name": "2606.00044.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 16,
+      "expected_chunks": 16,
+      "is_partial": false
+    },
+    {
+      "id": 12,
+      "name": "2611.03726.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 37,
+      "expected_chunks": 37,
+      "is_partial": false
+    },
+    {
+      "id": 13,
+      "name": "2611.03743.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 101,
+      "expected_chunks": 101,
+      "is_partial": false
+    },
+    {
+      "id": 14,
+      "name": "2611.03747.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 18,
+      "expected_chunks": 18,
+      "is_partial": false
+    },
+    {
+      "id": 15,
+      "name": "2611.03826.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 64,
+      "expected_chunks": 64,
+      "is_partial": false
+    },
+    {
+      "id": 16,
+      "name": "2611.03927.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 162,
+      "expected_chunks": 162,
+      "is_partial": false
+    },
+    {
+      "id": 17,
+      "name": "2611.04005.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 62,
+      "expected_chunks": 62,
+      "is_partial": false
+    },
+    {
+      "id": 18,
+      "name": "2611.04140.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 15,
+      "expected_chunks": 15,
+      "is_partial": false
+    },
+    {
+      "id": 19,
+      "name": "2611.04225.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 48,
+      "expected_chunks": 48,
+      "is_partial": false
+    },
+    {
+      "id": 20,
+      "name": "2611.04259.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 43,
+      "expected_chunks": 43,
+      "is_partial": false
+    },
+    {
+      "id": 21,
+      "name": "2611.04301.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 46,
+      "expected_chunks": 46,
+      "is_partial": false
+    },
+    {
+      "id": 22,
+      "name": "2611.04343.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 30,
+      "expected_chunks": 30,
+      "is_partial": false
+    },
+    {
+      "id": 23,
+      "name": "2611.04439.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 30,
+      "expected_chunks": 30,
+      "is_partial": false
+    },
+    {
+      "id": 24,
+      "name": "2611.04455.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 30,
+      "expected_chunks": 30,
+      "is_partial": false
+    },
+    {
+      "id": 25,
+      "name": "2611.04459.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 21,
+      "expected_chunks": 21,
+      "is_partial": false
+    },
+    {
+      "id": 26,
+      "name": "2611.04619.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 30,
+      "expected_chunks": 30,
+      "is_partial": false
+    },
+    {
+      "id": 27,
+      "name": "2611.04625.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 30,
+      "expected_chunks": 30,
+      "is_partial": false
+    },
+    {
+      "id": 28,
+      "name": "2611.04662.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 30,
+      "expected_chunks": 30,
+      "is_partial": false
+    },
+    {
+      "id": 29,
+      "name": "2611.04715.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 30,
+      "expected_chunks": 30,
+      "is_partial": false
+    },
+    {
+      "id": 30,
+      "name": "2611.04720.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 30,
+      "expected_chunks": 30,
+      "is_partial": false
+    },
+    {
+      "id": 31,
+      "name": "2611.04775.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 30,
+      "expected_chunks": 30,
+      "is_partial": false
+    },
+    {
+      "id": 32,
+      "name": "2611.04979.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 30,
+      "expected_chunks": 30,
+      "is_partial": false
+    },
+    {
+      "id": 33,
+      "name": "2611.04997.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 30,
+      "expected_chunks": 30,
+      "is_partial": false
+    },
+    {
+      "id": 34,
+      "name": "2611.05006.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 29,
+      "expected_chunks": 29,
+      "is_partial": false
+    },
+    {
+      "id": 35,
+      "name": "2611.05071.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 30,
+      "expected_chunks": 30,
+      "is_partial": false
+    },
+    {
+      "id": 36,
+      "name": "2611.05193.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 30,
+      "expected_chunks": 30,
+      "is_partial": false
+    },
+    {
+      "id": 37,
+      "name": "2611.05319.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 30,
+      "expected_chunks": 30,
+      "is_partial": false
+    },
+    {
+      "id": 38,
+      "name": "2611.05445.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 30,
+      "expected_chunks": 30,
+      "is_partial": false
+    },
+    {
+      "id": 39,
+      "name": "2611.05596.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 30,
+      "expected_chunks": 30,
+      "is_partial": false
+    },
+    {
+      "id": 40,
+      "name": "2611.05643.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 30,
+      "expected_chunks": 30,
+      "is_partial": false
+    },
+    {
+      "id": 41,
+      "name": "2611.05664.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 19,
+      "expected_chunks": 19,
+      "is_partial": false
+    },
+    {
+      "id": 42,
+      "name": "2611.05690.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 30,
+      "expected_chunks": 30,
+      "is_partial": false
+    },
+    {
+      "id": 43,
+      "name": "2611.05753.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 30,
+      "expected_chunks": 30,
+      "is_partial": false
+    },
+    {
+      "id": 44,
+      "name": "2611.05799.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 30,
+      "expected_chunks": 30,
+      "is_partial": false
+    },
+    {
+      "id": 45,
+      "name": "2611.05829.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 27,
+      "expected_chunks": 27,
+      "is_partial": false
+    },
+    {
+      "id": 46,
+      "name": "2611.05900.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 30,
+      "expected_chunks": 30,
+      "is_partial": false
+    },
+    {
+      "id": 47,
+      "name": "2611.05908.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 17,
+      "expected_chunks": 17,
+      "is_partial": false
+    },
+    {
+      "id": 48,
+      "name": "2611.05952.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 30,
+      "expected_chunks": 30,
+      "is_partial": false
+    },
+    {
+      "id": 49,
+      "name": "2611.05997.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 24,
+      "expected_chunks": 24,
+      "is_partial": false
+    },
+    {
+      "id": 50,
+      "name": "2611.06044.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 30,
+      "expected_chunks": 30,
+      "is_partial": false
+    },
+    {
+      "id": 51,
+      "name": "2611.06323.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 30,
+      "expected_chunks": 30,
+      "is_partial": false
+    },
+    {
+      "id": 52,
+      "name": "2611.06349.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 30,
+      "expected_chunks": 30,
+      "is_partial": false
+    },
+    {
+      "id": 53,
+      "name": "2611.06481.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 30,
+      "expected_chunks": 30,
+      "is_partial": false
+    },
+    {
+      "id": 54,
+      "name": "2611.06498.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 30,
+      "expected_chunks": 30,
+      "is_partial": false
+    },
+    {
+      "id": 55,
+      "name": "2611.06521.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 30,
+      "expected_chunks": 30,
+      "is_partial": false
+    },
+    {
+      "id": 56,
+      "name": "2611.06610.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 19,
+      "expected_chunks": 19,
+      "is_partial": false
+    },
+    {
+      "id": 57,
+      "name": "2611.06777.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 30,
+      "expected_chunks": 30,
+      "is_partial": false
+    },
+    {
+      "id": 58,
+      "name": "2611.06859.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 30,
+      "expected_chunks": 30,
+      "is_partial": false
+    },
+    {
+      "id": 59,
+      "name": "2611.07174.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 4,
+      "expected_chunks": 4,
+      "is_partial": false
+    },
+    {
+      "id": 60,
+      "name": "2611.07298.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 16,
+      "expected_chunks": 16,
+      "is_partial": false
+    },
+    {
+      "id": 61,
+      "name": "2611.07393.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 14,
+      "expected_chunks": 14,
+      "is_partial": false
+    },
+    {
+      "id": 62,
+      "name": "2611.07425.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 30,
+      "expected_chunks": 30,
+      "is_partial": false
+    },
+    {
+      "id": 63,
+      "name": "2611.07486.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 30,
+      "expected_chunks": 30,
+      "is_partial": false
+    },
+    {
+      "id": 64,
+      "name": "2611.07523.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 30,
+      "expected_chunks": 30,
+      "is_partial": false
+    },
+    {
+      "id": 65,
+      "name": "2611.07588.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 30,
+      "expected_chunks": 30,
+      "is_partial": false
+    },
+    {
+      "id": 66,
+      "name": "2611.07591.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 30,
+      "expected_chunks": 30,
+      "is_partial": false
+    },
+    {
+      "id": 67,
+      "name": "2611.07631.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 30,
+      "expected_chunks": 30,
+      "is_partial": false
+    },
+    {
+      "id": 68,
+      "name": "2611.07851.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 11,
+      "expected_chunks": 11,
+      "is_partial": false
+    },
+    {
+      "id": 69,
+      "name": "2611.07859.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 26,
+      "expected_chunks": 26,
+      "is_partial": false
+    },
+    {
+      "id": 70,
+      "name": "2611.07899.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 30,
+      "expected_chunks": 30,
+      "is_partial": false
+    },
+    {
+      "id": 71,
+      "name": "2611.07928.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 49,
+      "expected_chunks": 49,
+      "is_partial": false
+    },
+    {
+      "id": 72,
+      "name": "2611.07971.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 25,
+      "expected_chunks": 25,
+      "is_partial": false
+    },
+    {
+      "id": 73,
+      "name": "2611.08014.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 35,
+      "expected_chunks": 35,
+      "is_partial": false
+    },
+    {
+      "id": 74,
+      "name": "2611.08228.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 117,
+      "expected_chunks": 117,
+      "is_partial": false
+    },
+    {
+      "id": 75,
+      "name": "2611.08306.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 64,
+      "expected_chunks": 64,
+      "is_partial": false
+    },
+    {
+      "id": 76,
+      "name": "2611.08325.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 12,
+      "expected_chunks": 12,
+      "is_partial": false
+    },
+    {
+      "id": 77,
+      "name": "2611.08498.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 54,
+      "expected_chunks": 54,
+      "is_partial": false
+    },
+    {
+      "id": 78,
+      "name": "2611.08519.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 35,
+      "expected_chunks": 35,
+      "is_partial": false
+    },
+    {
+      "id": 79,
+      "name": "2611.08566.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 21,
+      "expected_chunks": 21,
+      "is_partial": false
+    },
+    {
+      "id": 80,
+      "name": "2611.08790.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 32,
+      "expected_chunks": 32,
+      "is_partial": false
+    },
+    {
+      "id": 81,
+      "name": "2611.08804.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 75,
+      "expected_chunks": 75,
+      "is_partial": false
+    },
+    {
+      "id": 82,
+      "name": "2611.08935.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 35,
+      "expected_chunks": 35,
+      "is_partial": false
+    },
+    {
+      "id": 83,
+      "name": "2611.09006.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 24,
+      "expected_chunks": 24,
+      "is_partial": false
+    },
+    {
+      "id": 84,
+      "name": "2611.09040.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 56,
+      "expected_chunks": 56,
+      "is_partial": false
+    },
+    {
+      "id": 85,
+      "name": "2611.09126.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 57,
+      "expected_chunks": 57,
+      "is_partial": false
+    },
+    {
+      "id": 86,
+      "name": "2611.09178.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 38,
+      "expected_chunks": 38,
+      "is_partial": false
+    },
+    {
+      "id": 87,
+      "name": "2611.09194.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 53,
+      "expected_chunks": 53,
+      "is_partial": false
+    },
+    {
+      "id": 88,
+      "name": "2611.09200.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 19,
+      "expected_chunks": 19,
+      "is_partial": false
+    },
+    {
+      "id": 89,
+      "name": "2611.09274.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 42,
+      "expected_chunks": 42,
+      "is_partial": false
+    },
+    {
+      "id": 90,
+      "name": "2611.09294.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 23,
+      "expected_chunks": 23,
+      "is_partial": false
+    },
+    {
+      "id": 91,
+      "name": "2611.09472.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 41,
+      "expected_chunks": 41,
+      "is_partial": false
+    },
+    {
+      "id": 92,
+      "name": "2611.09680.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 14,
+      "expected_chunks": 14,
+      "is_partial": false
+    },
+    {
+      "id": 93,
+      "name": "2611.09728.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 36,
+      "expected_chunks": 36,
+      "is_partial": false
+    },
+    {
+      "id": 94,
+      "name": "2611.10158.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 16,
+      "expected_chunks": 16,
+      "is_partial": false
+    },
+    {
+      "id": 95,
+      "name": "2611.10349.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 48,
+      "expected_chunks": 48,
+      "is_partial": false
+    },
+    {
+      "id": 96,
+      "name": "2611.10356.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 48,
+      "expected_chunks": 48,
+      "is_partial": false
+    },
+    {
+      "id": 97,
+      "name": "2611.10357.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 51,
+      "expected_chunks": 51,
+      "is_partial": false
+    },
+    {
+      "id": 98,
+      "name": "2611.10405.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 33,
+      "expected_chunks": 33,
+      "is_partial": false
+    },
+    {
+      "id": 99,
+      "name": "2611.10414.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 48,
+      "expected_chunks": 48,
+      "is_partial": false
+    },
+    {
+      "id": 100,
+      "name": "2611.10538.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 45,
+      "expected_chunks": 45,
+      "is_partial": false
+    },
+    {
+      "id": 101,
+      "name": "2611.10576.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 45,
+      "expected_chunks": 45,
+      "is_partial": false
+    },
+    {
+      "id": 102,
+      "name": "2611.10613.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 54,
+      "expected_chunks": 54,
+      "is_partial": false
+    },
+    {
+      "id": 103,
+      "name": "2611.10681.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 309,
+      "expected_chunks": 309,
+      "is_partial": false
+    },
+    {
+      "id": 104,
+      "name": "2611.10715.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 44,
+      "expected_chunks": 44,
+      "is_partial": false
+    },
+    {
+      "id": 105,
+      "name": "2611.10922.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 10,
+      "expected_chunks": 10,
+      "is_partial": false
+    },
+    {
+      "id": 106,
+      "name": "2611.10977.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 12,
+      "expected_chunks": 12,
+      "is_partial": false
+    },
+    {
+      "id": 107,
+      "name": "2611.11010.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 15,
+      "expected_chunks": 15,
+      "is_partial": false
+    },
+    {
+      "id": 108,
+      "name": "2611.11013.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 7,
+      "expected_chunks": 7,
+      "is_partial": false
+    },
+    {
+      "id": 109,
+      "name": "2611.11016.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 17,
+      "expected_chunks": 17,
+      "is_partial": false
+    },
+    {
+      "id": 110,
+      "name": "2611.11031.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 28,
+      "expected_chunks": 28,
+      "is_partial": false
+    },
+    {
+      "id": 111,
+      "name": "2611.11113.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 55,
+      "expected_chunks": 55,
+      "is_partial": false
+    },
+    {
+      "id": 112,
+      "name": "2611.11197.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 69,
+      "expected_chunks": 69,
+      "is_partial": false
+    },
+    {
+      "id": 113,
+      "name": "2611.11278.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 44,
+      "expected_chunks": 44,
+      "is_partial": false
+    },
+    {
+      "id": 114,
+      "name": "2611.11346.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 78,
+      "expected_chunks": 78,
+      "is_partial": false
+    },
+    {
+      "id": 115,
+      "name": "2611.11396.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 34,
+      "expected_chunks": 34,
+      "is_partial": false
+    },
+    {
+      "id": 116,
+      "name": "2611.11480.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 23,
+      "expected_chunks": 23,
+      "is_partial": false
+    },
+    {
+      "id": 117,
+      "name": "2611.11549.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 41,
+      "expected_chunks": 41,
+      "is_partial": false
+    },
+    {
+      "id": 118,
+      "name": "2611.11801.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 27,
+      "expected_chunks": 27,
+      "is_partial": false
+    },
+    {
+      "id": 119,
+      "name": "2611.11886.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 27,
+      "expected_chunks": 27,
+      "is_partial": false
+    },
+    {
+      "id": 120,
+      "name": "2611.11955.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 38,
+      "expected_chunks": 38,
+      "is_partial": false
+    },
+    {
+      "id": 121,
+      "name": "2611.12097.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 29,
+      "expected_chunks": 29,
+      "is_partial": false
+    },
+    {
+      "id": 122,
+      "name": "2611.12180.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 32,
+      "expected_chunks": 32,
+      "is_partial": false
+    },
+    {
+      "id": 123,
+      "name": "2611.12296.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 41,
+      "expected_chunks": 41,
+      "is_partial": false
+    },
+    {
+      "id": 124,
+      "name": "2611.12313.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 30,
+      "expected_chunks": 30,
+      "is_partial": false
+    },
+    {
+      "id": 125,
+      "name": "2611.12705.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 8,
+      "expected_chunks": 8,
+      "is_partial": false
+    },
+    {
+      "id": 126,
+      "name": "2611.12725.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 20,
+      "expected_chunks": 20,
+      "is_partial": false
+    },
+    {
+      "id": 127,
+      "name": "2611.12731.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 82,
+      "expected_chunks": 82,
+      "is_partial": false
+    },
+    {
+      "id": 128,
+      "name": "2611.12750.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 73,
+      "expected_chunks": 73,
+      "is_partial": false
+    },
+    {
+      "id": 129,
+      "name": "2611.14168.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 99,
+      "expected_chunks": 99,
+      "is_partial": false
+    },
+    {
+      "id": 130,
+      "name": "2611.14221.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 48,
+      "expected_chunks": 48,
+      "is_partial": false
+    },
+    {
+      "id": 131,
+      "name": "2611.14236.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 29,
+      "expected_chunks": 29,
+      "is_partial": false
+    },
+    {
+      "id": 132,
+      "name": "2611.14241.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 18,
+      "expected_chunks": 18,
+      "is_partial": false
+    },
+    {
+      "id": 133,
+      "name": "2611.14244.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 29,
+      "expected_chunks": 29,
+      "is_partial": false
+    },
+    {
+      "id": 134,
+      "name": "2611.14252.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 80,
+      "expected_chunks": 80,
+      "is_partial": false
+    },
+    {
+      "id": 135,
+      "name": "2611.14325.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 35,
+      "expected_chunks": 35,
+      "is_partial": false
+    },
+    {
+      "id": 136,
+      "name": "2611.14364.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 63,
+      "expected_chunks": 63,
+      "is_partial": false
+    },
+    {
+      "id": 137,
+      "name": "2611.14387.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 34,
+      "expected_chunks": 34,
+      "is_partial": false
+    },
+    {
+      "id": 138,
+      "name": "2611.14459.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 25,
+      "expected_chunks": 25,
+      "is_partial": false
+    },
+    {
+      "id": 139,
+      "name": "2611.14480.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 14,
+      "expected_chunks": 14,
+      "is_partial": false
+    },
+    {
+      "id": 140,
+      "name": "2611.14483.pdf",
+      "size_bytes": 0,
+      "content_hash": "",
+      "status": "indexed",
+      "chunk_count": 14,
+      "expected_chunks": 14,
+      "is_partial": false
+    }
+  ],
+  "digest": "f06183ebaff7fa2681c50211e20c53c3d83a9ab53ba93d2ad285a6dc9d05a201"
+}

@@ -129,6 +129,20 @@ export interface TaskSummary {
   created_at: string;
 }
 
+/** 只读分享页数据 */
+export interface SharedReport {
+  token: string;
+  title: string;
+  query: string;
+  summary: string;
+  markdown: string;
+  version: number;
+  degraded: boolean;
+  created_at: string;
+  sources: SourceItem[];
+  claims: ClaimItem[];
+}
+
 export interface SourceStatItem {
   category: string;
   label: string;

@@ -110,6 +110,25 @@ class Report(Base):
     created_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), default=utcnow)
 
 
+class ReportShare(Base):
+    """报告只读分享：token 公开可读，绑定分享时的报告版本，可设过期时间。"""
+
+    __tablename__ = "report_shares"
+
+    id: Mapped[int] = mapped_column(sa.Integer, primary_key=True, autoincrement=True)
+    token: Mapped[str] = mapped_column(sa.String(64), unique=True, index=True)
+    task_id: Mapped[str] = mapped_column(
+        sa.String(36), sa.ForeignKey("research_tasks.id"), index=True
+    )
+    report_id: Mapped[int] = mapped_column(sa.Integer, sa.ForeignKey("reports.id"))
+    tenant_id: Mapped[str] = mapped_column(sa.String(64), default="default", index=True)
+    revoked: Mapped[bool] = mapped_column(sa.Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), default=utcnow)
+    expires_at: Mapped[datetime | None] = mapped_column(
+        sa.DateTime(timezone=True), nullable=True
+    )
+
+
 class Message(Base):
     __tablename__ = "messages"
 

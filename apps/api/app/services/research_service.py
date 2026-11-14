@@ -22,6 +22,7 @@ from app.models.research import (
     Citation,
     Message,
     Report,
+    ReportShare,
     ResearchStep,
     ResearchTask,
     STEP_DEFS,
@@ -383,6 +384,20 @@ async def _close_steps(task_id: str, status: str, error: str = "") -> None:
 
 # ---------------- 追问 / 取消 / 重试 / 删除 ----------------
 
+async def _delete_task_citations(db, task_id: str) -> None:
+    """删除任务所有报告的 citation。
+
+    追问/重试会删掉旧 sources 并重建；citation.source_id 有外键，必须先清理，
+    否则 SQLite/PG 都会报 FOREIGN KEY constraint failed。
+    历史报告正文仍保留（多轮展示），但旧 claim 明细不再展示。
+    """
+    report_ids = (
+        await db.execute(select(Report.id).where(Report.task_id == task_id))
+    ).scalars().all()
+    if report_ids:
+        await db.execute(sql_delete(Citation).where(Citation.report_id.in_(report_ids)))
+
+
 async def followup(
     task_id: str, query: str, lang: str = "zh", tenant_id: str = "default"
 ) -> str:
@@ -413,6 +428,7 @@ async def followup(
             s.started_at = None
             s.finished_at = None
             s.meta_json = {}
+        await _delete_task_citations(db, task_id)
         await db.execute(sql_delete(Source).where(Source.task_id == task_id))
         await db.commit()
     await EVENT_BUS.reset(task_id)
@@ -472,6 +488,7 @@ async def retry(
             s.started_at = None
             s.finished_at = None
             s.meta_json = {}
+        await _delete_task_citations(db, task_id)
         await db.execute(sql_delete(Source).where(Source.task_id == task_id))
         await db.commit()
     await EVENT_BUS.reset(task_id)
@@ -491,6 +508,7 @@ async def delete_task(task_id: str, tenant_id: str = "default") -> str:
         ).scalars().all()
         if report_ids:
             await db.execute(sql_delete(Citation).where(Citation.report_id.in_(report_ids)))
+        await db.execute(sql_delete(ReportShare).where(ReportShare.task_id == task_id))
         await db.execute(sql_delete(Report).where(Report.task_id == task_id))
         await db.execute(sql_delete(Source).where(Source.task_id == task_id))
         await db.execute(sql_delete(ResearchStep).where(ResearchStep.task_id == task_id))

@@ -24,6 +24,7 @@ tiktoken>=0.13
 # 文档解析（PDF 智能解析）
 pypdf>=5.0
 python-docx>=1.1
+reportlab>=4.0  # 报告 PDF 导出
 pymupdf>=1.28
 rapidocr-onnxruntime>=1.4
 onnxruntime>=1.28

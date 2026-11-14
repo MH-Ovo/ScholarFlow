@@ -71,6 +71,27 @@ class ClaimOut(BaseModel):
     supported: bool | None = None
 
 
+class ShareOut(BaseModel):
+    token: str
+    path: str
+    expires_at: str | None = None
+
+
+class SharedReportOut(BaseModel):
+    """公开分享页数据：只读、不含任务内部状态。"""
+
+    token: str
+    title: str
+    query: str
+    summary: str
+    markdown: str
+    version: int
+    degraded: bool = False
+    created_at: str
+    sources: list[SourceOut] = []
+    claims: list[ClaimOut] = []
+
+
 class TaskDetailOut(BaseModel):
     id: str
     title: str

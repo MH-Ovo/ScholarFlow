@@ -2,9 +2,9 @@ import type {
   AnalyticsSummary,
   KbChunkDetail,
   KbDetail,
-  KbDocument,
   KbDocumentPage,
   KbStats,
+  SharedReport,
   SourceFulltext,
   SourceStatItem,
   TaskDetail,
@@ -171,8 +171,11 @@ export const api = {
       method: "POST",
     }),
 
-  exportReport: async (taskId: string): Promise<Blob> => {
-    const resp = await fetch(`${BASE}/research/${taskId}/export`, {
+  exportReport: async (
+    taskId: string,
+    format: "md" | "docx" | "pdf" = "md",
+  ): Promise<Blob> => {
+    const resp = await fetch(`${BASE}/research/${taskId}/export?format=${format}`, {
       headers: authHeaders(),
     });
     if (resp.status === 401) {
@@ -182,6 +185,14 @@ export const api = {
     if (!resp.ok) throw new Error(`导出失败: ${resp.status}`);
     return resp.blob();
   },
+
+  createShare: (taskId: string) =>
+    request<{ token: string; path: string; expires_at: string | null }>(
+      `/research/${taskId}/share`,
+      { method: "POST" },
+    ),
+
+  getShared: (token: string) => request<SharedReport>(`/share/${token}`),
 
   sourceStats: () => request<{ items: SourceStatItem[] }>("/sources/stats"),
 

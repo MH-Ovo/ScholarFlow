@@ -1,10 +1,12 @@
-"""研究任务路由：创建 / 列表 / 详情 / SSE 流 / 追问 / 取消 / 重试 / 删除 / 导出。"""
+"""研究任务路由：创建 / 列表 / 详情 / SSE 流 / 追问 / 取消 / 重试 / 删除 / 导出 / 分享。"""
 import asyncio
 import json
+import secrets
 import time
+from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
-from fastapi.responses import PlainTextResponse, StreamingResponse
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Response
+from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 
 from app.agents.events import EVENT_BUS
@@ -12,16 +14,26 @@ from app.core.auth import Principal, require_principal
 from app.core.config import get_settings
 from app.core.timeutil import fmt_dt
 from app.db.session import SessionLocal
-from app.models.research import Citation, Document, Message, Report, ResearchStep, ResearchTask, Source
+from app.models.research import (
+    Citation,
+    Document,
+    Message,
+    Report,
+    ReportShare,
+    ResearchStep,
+    ResearchTask,
+    Source,
+)
 from app.schemas.research import (
     CreateResearchRequest,
     CreateResearchResponse,
     FollowupRequest,
+    ShareOut,
     SourceFulltextOut,
     TaskDetailOut,
     TaskSummaryOut,
 )
-from app.services import fulltext_service, research_service
+from app.services import export_service, fulltext_service, research_service
 
 router = APIRouter(prefix="/research", tags=["research"])
 settings = get_settings()
@@ -317,8 +329,16 @@ async def fetch_source_fulltext(
     return SourceFulltextOut(**result)
 
 
-@router.get("/{task_id}/export", response_class=PlainTextResponse)
-async def export_research(task_id: str, principal: Principal = Depends(require_principal)):
+@router.get("/{task_id}/export")
+async def export_research(
+    task_id: str,
+    format: str = "md",
+    principal: Principal = Depends(require_principal),
+):
+    """导出报告：md（默认）/ docx / pdf。"""
+    fmt = (format or "md").strip().lower().lstrip(".")
+    if fmt not in {"md", "docx", "pdf"}:
+        raise HTTPException(status_code=422, detail="format 仅支持 md / docx / pdf")
     async with SessionLocal() as db:
         task = await db.get(ResearchTask, task_id)
         if task is None or task.tenant_id != principal.tenant_id:
@@ -328,7 +348,81 @@ async def export_research(task_id: str, principal: Principal = Depends(require_p
                 select(Report).where(Report.task_id == task_id).order_by(Report.version.desc())
             )
         ).scalars().first()
+        sources = (
+            await db.execute(
+                select(Source).where(Source.task_id == task_id).order_by(Source.ref_no)
+            )
+        ).scalars().all()
     if report is None:
         raise HTTPException(status_code=404, detail="report not ready")
-    headers = {"Content-Disposition": f'attachment; filename="report-{task_id[:8]}.md"'}
-    return PlainTextResponse(content=report.markdown, headers=headers)
+
+    markdown = report.markdown
+    if sources:
+        # 报告正文只有 [n] 标记，导出时补上来源列表，脱离网页也能核对引用
+        refs = ["", "## 参考来源", ""]
+        for s in sources:
+            label = f"- [{s.ref_no}] {s.title or s.url}"
+            if s.source_label:
+                label += f"（{s.source_label}）"
+            if s.url:
+                label += f" {s.url}"
+            refs.append(label)
+        markdown = markdown.rstrip() + "\n" + "\n".join(refs) + "\n"
+
+    filename = f"report-{task_id[:8]}.{fmt}"
+    headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
+    if fmt == "md":
+        return Response(
+            content=markdown,
+            media_type="text/markdown; charset=utf-8",
+            headers=headers,
+        )
+    if fmt == "docx":
+        data = await asyncio.to_thread(
+            export_service.markdown_to_docx, markdown, report.title or task.title
+        )
+        return Response(
+            content=data,
+            media_type=(
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            ),
+            headers=headers,
+        )
+    data = await asyncio.to_thread(
+        export_service.markdown_to_pdf, markdown, report.title or task.title
+    )
+    return Response(content=data, media_type="application/pdf", headers=headers)
+
+
+@router.post("/{task_id}/share", response_model=ShareOut)
+async def create_report_share(
+    task_id: str, principal: Principal = Depends(require_principal)
+):
+    """生成只读分享链接：公开可读、不带鉴权，默认 7 天过期。"""
+    async with SessionLocal() as db:
+        task = await db.get(ResearchTask, task_id)
+        if task is None or task.tenant_id != principal.tenant_id:
+            raise HTTPException(status_code=404, detail="task not found")
+        report = (
+            await db.execute(
+                select(Report).where(Report.task_id == task_id).order_by(Report.version.desc())
+            )
+        ).scalars().first()
+        if report is None:
+            raise HTTPException(status_code=404, detail="report not ready")
+        token = secrets.token_urlsafe(24)
+        days = max(1, min(int(settings.share_ttl_days), 365))
+        expires_at = datetime.now(timezone.utc) + timedelta(days=days)
+        db.add(
+            ReportShare(
+                token=token,
+                task_id=task.id,
+                report_id=report.id,
+                tenant_id=principal.tenant_id,
+                expires_at=expires_at,
+            )
+        )
+        await db.commit()
+    return ShareOut(
+        token=token, path=f"/share/{token}", expires_at=fmt_dt(expires_at)
+    )
